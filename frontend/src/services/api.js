@@ -105,6 +105,18 @@ export const safetyApi = {
     }
   },
 
+  // 내 점검 재제출(기존 레코드에 revision 추가)
+  resubmitMyInspection: async (payload) => {
+    // payload: { userName, date, hospital, equipmentName?, answers, signatureBase64? }
+    try {
+      const response = await api.post('/me/inspections/resubmit', payload);
+      return response.data;
+    } catch (error) {
+      console.error('점검 재제출 실패:', error);
+      throw error;
+    }
+  },
+
   // --- 3. 관리자 전용 기능 (Admin) ---
 
   // 전체 점검 내역 조회 (필터링 포함)
