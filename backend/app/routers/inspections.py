@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Any, Dict, List, Optional
 import io
+from pathlib import Path
 
 from app.schemas.inspection import InspectionSubmission
 from app.services.excel_export_service import build_export_filename, build_inspections_excel_bytes
@@ -35,9 +36,13 @@ def admin_list_inspections(admin_name: str, start_date: str, end_date: str):
 def export_inspections(admin_name: str, start_date: str, end_date: str):
     data = list_admin_inspections(start_date, end_date)
 
-    template_path = "backend/templates/EHS_Checklist_HB.xlsx"
+    backend_root = Path(__file__).resolve().parents[2]
+    template_path = backend_root / "templates" / "EHS_Checklist_HB.xlsx"
+    if not template_path.exists():
+        raise HTTPException(status_code=500, detail=f"excel template not found: {template_path}")
+
     try:
-        excel_bytes = build_inspections_excel_bytes(data, template_path=template_path)
+        excel_bytes = build_inspections_excel_bytes(data, template_path=str(template_path))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"excel export failed: {exc}")
 
