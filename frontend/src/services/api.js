@@ -9,6 +9,21 @@ const api = axios.create({
   timeout: 10000,
 });
 
+const downloadNameCounter = new Map();
+
+function makeIncrementedFileName(fileName) {
+  const safeName = fileName || 'safety_report.xlsx';
+  const dot = safeName.lastIndexOf('.');
+  const base = dot > 0 ? safeName.slice(0, dot) : safeName;
+  const ext = dot > 0 ? safeName.slice(dot) : '';
+
+  const current = downloadNameCounter.get(safeName) || 0;
+  downloadNameCounter.set(safeName, current + 1);
+
+  if (current === 0) return safeName;
+  return `${base}_${current}${ext}`;
+}
+
 /**
  * 안전 점검 시스템 API 서비스 모듈
  */
@@ -144,7 +159,12 @@ export const safetyApi = {
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `safety_report_${new Date().getTime()}.xlsx`);
+
+      const disposition = response.headers?.['content-disposition'] || '';
+      const match = disposition.match(/filename="?([^";]+)"?/i);
+      const serverFileName = match?.[1] || `safety_report_${new Date().getTime()}.xlsx`;
+      link.setAttribute('download', makeIncrementedFileName(serverFileName));
+
       document.body.appendChild(link);
       link.click();
 

@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 import io
 
 from app.schemas.inspection import InspectionSubmission
+from app.services.excel_export_service import build_export_filename, build_inspections_excel_bytes
 from app.services.inspections_service import (
     create_inspection_record,
     list_admin_inspections,
@@ -34,33 +35,16 @@ def admin_list_inspections(admin_name: str, start_date: str, end_date: str):
 def export_inspections(admin_name: str, start_date: str, end_date: str):
     data = list_admin_inspections(start_date, end_date)
 
+    template_path = "backend/templates/EHS_Checklist_HB.xlsx"
     try:
-        from openpyxl import Workbook
-    except Exception:
-        raise HTTPException(status_code=500, detail="openpyxl not installed")
+        excel_bytes = build_inspections_excel_bytes(data, template_path=template_path)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"excel export failed: {exc}")
 
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Inspections"
-    ws.append(["id", "date", "name", "hospital", "equipmentName", "workType", "status", "resultCount", "improveCount"])
-    for r in data:
-        ws.append([
-            r.get("id"),
-            r.get("date"),
-            r.get("name"),
-            r.get("hospital"),
-            r.get("equipmentName"),
-            r.get("workType"),
-            r.get("status"),
-            r.get("resultCount"),
-            r.get("improveCount"),
-        ])
-
-    stream = io.BytesIO()
-    wb.save(stream)
+    stream = io.BytesIO(excel_bytes)
     stream.seek(0)
 
-    filename = f"safety_report_{start_date}_to_{end_date}.xlsx"
+    filename = build_export_filename(start_date, end_date)
     return StreamingResponse(
         stream,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
