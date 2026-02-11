@@ -191,16 +191,27 @@ const App = () => {
   const handleInspectionSubmit = async (answers, signatureBase64) => {
     setIsLoading(true);
     try {
-      await safetyApi.submitInspection({
-        userName: user.name,
-        date: setupData.date,
-        hospital: setupData.hospital,
-        equipmentName: setupData.equipmentName,
-        workType: setupData.workType,
-        checklistVersion: 1,
-        answers,
-        signatureBase64,
-      });
+      if (editContext) {
+        await safetyApi.resubmitMyInspection({
+          userName: user.name,
+          date: setupData.date,
+          hospital: setupData.hospital,
+          equipmentName: setupData.equipmentName,
+          answers,
+          signatureBase64,
+        });
+      } else {
+        await safetyApi.submitInspection({
+          userName: user.name,
+          date: setupData.date,
+          hospital: setupData.hospital,
+          equipmentName: setupData.equipmentName,
+          workType: setupData.workType,
+          checklistVersion: 1,
+          answers,
+          signatureBase64,
+        });
+      }
 
       setEditContext(null);
       setTempResults(null);
@@ -248,6 +259,7 @@ const handleApprove = async ({ inspectionId, subadminName, signatureBase64 }) =>
   // ✅ 서명 누락이면 요청 자체를 막기 (422 방지)
   if (!signatureBase64 || String(signatureBase64).trim().length < 50) {
     alert('서명이 누락되었습니다. 서명을 다시 입력해주세요.');
+    console.log('[approve] missing signatureBase64', { inspectionId, subadminName, signatureBase64 });
     return;
   }
   if (!subadminName || !String(subadminName).trim()) {
