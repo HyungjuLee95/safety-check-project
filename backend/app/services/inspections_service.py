@@ -123,6 +123,8 @@ def list_admin_inspections(start_date: str, end_date: str) -> List[Dict[str, Any
             # detail 용으로도 바로 쓸 수 있게 포함
             "results": latest.get("answers") or [],
             "signatureBase64": latest.get("signatureBase64"),
+            "subadminName": r.get("approvedBy"),
+            "subadminSignatureBase64": r.get("subadminSignatureBase64"),
             "createdAt": r.get("createdAt"),
             "updatedAt": r.get("updatedAt"),
         })
