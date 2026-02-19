@@ -30,6 +30,17 @@ function makeIncrementedFileName(fileName) {
 export const safetyApi = {
   // --- 1. 공통 및 사용자 설정 조회 ---
 
+  loginUser: async (payload) => {
+    // payload: { name, phoneLast4 }
+    try {
+      const response = await api.post('/users/login', payload);
+      return response.data;
+    } catch (error) {
+      console.error('로그인 실패:', error);
+      throw error;
+    }
+  },
+
   // 작업 장소(병원) 목록 조회
   getHospitals: async () => {
     try {
@@ -133,6 +144,27 @@ export const safetyApi = {
   },
 
   // --- 3. 관리자 전용 기능 (Admin) ---
+
+
+  getSubadmins: async () => {
+    const response = await api.get('/subadmins');
+    return response.data;
+  },
+
+  createSubadmin: async (payload) => {
+    const response = await api.post('/subadmins', payload);
+    return response.data;
+  },
+
+  updateSubadmin: async (id, payload) => {
+    const response = await api.put(`/subadmins/${id}`, payload);
+    return response.data;
+  },
+
+  deleteSubadmin: async (id) => {
+    const response = await api.delete(`/subadmins/${id}`);
+    return response.data;
+  },
 
   // 전체 점검 내역 조회 (필터링 포함)
   getInspections: async (params) => {
