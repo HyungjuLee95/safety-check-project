@@ -29,15 +29,37 @@ def submit_inspection(data: InspectionSubmission):
 
 
 @router.get("/inspections")
-def admin_list_inspections(admin_name: str, start_date: str, end_date: str, requester_role: Optional[str] = None, requester_categories: Optional[str] = None):
+def admin_list_inspections(
+    admin_name: str,
+    start_date: str,
+    end_date: str,
+    requester_role: Optional[str] = None,
+    requester_categories: Optional[str] = None,
+):
     categories = [c.strip() for c in str(requester_categories or "").split(",") if c.strip()]
-    return list_admin_inspections(start_date, end_date, requester_role=requester_role, requester_categories=categories)
+    return list_admin_inspections(
+        start_date,
+        end_date,
+        requester_role=requester_role,
+        requester_categories=categories,
+    )
 
 
 @router.get("/inspections/export")
-def export_inspections(admin_name: str, start_date: str, end_date: str, requester_role: Optional[str] = None, requester_categories: Optional[str] = None):
+def export_inspections(
+    admin_name: str,
+    start_date: str,
+    end_date: str,
+    requester_role: Optional[str] = None,
+    requester_categories: Optional[str] = None,
+):
     categories = [c.strip() for c in str(requester_categories or "").split(",") if c.strip()]
-    data = list_admin_inspections(start_date, end_date, requester_role=requester_role, requester_categories=categories)
+    data = list_admin_inspections(
+        start_date,
+        end_date,
+        requester_role=requester_role,
+        requester_categories=categories,
+    )
 
     backend_root = Path(__file__).resolve().parents[2]
     template_path = backend_root / "templates" / "EHS_Checklist_HB.xlsx"
