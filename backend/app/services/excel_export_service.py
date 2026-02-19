@@ -176,8 +176,6 @@ def _insert_signature_image_pretty(ws, anchor_cell: str, image_bytes: Optional[b
     ws.add_image(img, anchor_cell)
 
 
-
-
 def _set_cell_value_safe(ws, coord: str, value: Any) -> None:
     """Write to a cell while safely handling merged-cell coordinates."""
     cell = ws[coord]
@@ -192,6 +190,7 @@ def _set_cell_value_safe(ws, coord: str, value: Any) -> None:
 
     # fallback (should rarely happen)
     ws[cell.coordinate].value = value
+
 
 def _replace_placeholder(cell_value: Any, new_value: str) -> str:
     if not isinstance(cell_value, str):
