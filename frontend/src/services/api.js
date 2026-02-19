@@ -9,11 +9,37 @@ const api = axios.create({
   timeout: 10000,
 });
 
+const downloadNameCounter = new Map();
+
+function makeIncrementedFileName(fileName) {
+  const safeName = fileName || 'safety_report.xlsx';
+  const dot = safeName.lastIndexOf('.');
+  const base = dot > 0 ? safeName.slice(0, dot) : safeName;
+  const ext = dot > 0 ? safeName.slice(dot) : '';
+
+  const current = downloadNameCounter.get(safeName) || 0;
+  downloadNameCounter.set(safeName, current + 1);
+
+  if (current === 0) return safeName;
+  return `${base}_${current}${ext}`;
+}
+
 /**
  * 안전 점검 시스템 API 서비스 모듈
  */
 export const safetyApi = {
   // --- 1. 공통 및 사용자 설정 조회 ---
+
+  loginUser: async (payload) => {
+    // payload: { name, phoneLast4 }
+    try {
+      const response = await api.post('/users/login', payload);
+      return response.data;
+    } catch (error) {
+      console.error('로그인 실패:', error);
+      throw error;
+    }
+  },
 
   // 작업 장소(병원) 목록 조회
   getHospitals: async () => {
@@ -105,7 +131,40 @@ export const safetyApi = {
     }
   },
 
+  // 내 점검 재제출(기존 레코드에 revision 추가)
+  resubmitMyInspection: async (payload) => {
+    // payload: { userName, date, hospital, equipmentName?, answers, signatureBase64? }
+    try {
+      const response = await api.post('/me/inspections/resubmit', payload);
+      return response.data;
+    } catch (error) {
+      console.error('점검 재제출 실패:', error);
+      throw error;
+    }
+  },
+
   // --- 3. 관리자 전용 기능 (Admin) ---
+
+
+  getSubadmins: async () => {
+    const response = await api.get('/subadmins');
+    return response.data;
+  },
+
+  createSubadmin: async (payload) => {
+    const response = await api.post('/subadmins', payload);
+    return response.data;
+  },
+
+  updateSubadmin: async (id, payload) => {
+    const response = await api.put(`/subadmins/${id}`, payload);
+    return response.data;
+  },
+
+  deleteSubadmin: async (id) => {
+    const response = await api.delete(`/subadmins/${id}`);
+    return response.data;
+  },
 
   // 전체 점검 내역 조회 (필터링 포함)
   getInspections: async (params) => {
@@ -132,7 +191,12 @@ export const safetyApi = {
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `safety_report_${new Date().getTime()}.xlsx`);
+
+      const disposition = response.headers?.['content-disposition'] || '';
+      const match = disposition.match(/filename="?([^";]+)"?/i);
+      const serverFileName = match?.[1] || `safety_report_${new Date().getTime()}.xlsx`;
+      link.setAttribute('download', makeIncrementedFileName(serverFileName));
+
       document.body.appendChild(link);
       link.click();
 
