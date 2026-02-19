@@ -292,13 +292,10 @@ const handleApprove = async ({ inspectionId, subadminName, signatureBase64 }) =>
     await safetyApi.approveInspection(inspectionId, { subadminName, signatureBase64, subadminCategories: user?.categories || [] });
     alert('승인 처리되었습니다.');
 
-    // 목록 갱신
+    // 처리 완료 후 목록 재조회 + 상세 화면 이탈(중복 처리 방지)
     await fetchAdminLikeRecords();
-
-    // ⚠️ records는 setState라 즉시 최신이 아닐 수 있음
-    // (우선은 기존 로직 유지해도 되고, 다음 단계에서 "fetch 함수가 data return" 하게 개선하면 더 안정적)
-    const updated = (records || []).find((r) => r.id === inspectionId);
-    if (updated) setSelectedRecord(updated);
+    setSelectedRecord(null);
+    setView('subadmin_records');
   } catch (e) {
     console.error(e);
     const msg = e?.response?.data?.detail;
@@ -319,10 +316,10 @@ const handleReject = async ({ inspectionId, subadminName, reason }) => {
     await safetyApi.rejectInspection(inspectionId, { subadminName, reason, subadminCategories: user?.categories || [] });
     alert('반려 처리되었습니다.');
 
+    // 처리 완료 후 목록 재조회 + 상세 화면 이탈(중복 처리 방지)
     await fetchAdminLikeRecords();
-
-    const updated = (records || []).find((r) => r.id === inspectionId);
-    if (updated) setSelectedRecord(updated);
+    setSelectedRecord(null);
+    setView('subadmin_records');
   } catch (e) {
     console.error(e);
     const msg = e?.response?.data?.detail;
