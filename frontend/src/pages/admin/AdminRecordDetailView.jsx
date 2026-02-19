@@ -28,7 +28,8 @@ const AdminRecordDetailView = ({ user, record, onBack, onApprove, onReject }) =>
   const workerSig = signatureSrc(record?.signatureBase64);
   const subSig = signatureSrc(record?.subadminSignatureBase64); // 백엔드가 이 필드를 내려줘야 실제 표시됨
 
-  const isSubadmin = String(user?.role || '').toUpperCase() === 'SUBADMIN';
+  const normalizedRole = String(user?.role || '').trim().toUpperCase();
+  const isSubadmin = normalizedRole === 'SUBADMIN' || normalizedRole === 'SUB_ADMIN';
   const isPending = String(record?.status || '').toUpperCase() === 'PENDING';
 
   // --- 서명 모달(승인용) ---
