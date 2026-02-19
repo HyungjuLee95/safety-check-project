@@ -1,7 +1,7 @@
 import datetime
 from typing import Any, Dict, List
 
-from app.storage.memory_store import CHECKLISTS
+from app.storage.firestore_client import get_firestore_client
 
 
 def _default_items(work_type: str) -> List[Dict[str, Any]]:
@@ -14,30 +14,7 @@ def _default_items(work_type: str) -> List[Dict[str, Any]]:
     ]
 
 
-def get_checklist(work_type: str) -> Dict[str, Any]:
-    key = str(work_type)
-    if key not in CHECKLISTS:
-        CHECKLISTS[key] = {
-            "workType": key,
-            "version": 1,
-            "items": _default_items(key),
-            "updatedAt": datetime.datetime.now().isoformat(),
-        }
-
-    cl = CHECKLISTS[key]
-    items = (cl.get("items") or [])
-    items = sorted(items, key=lambda x: int(x.get("order") or 0))
-
-    return {
-        "workType": key,
-        "version": cl.get("version", 1),
-        "items": items,
-        "updatedAt": cl.get("updatedAt"),
-    }
-
-
-def update_checklist(admin_name: str, work_type: str, items: List[Dict[str, Any]]) -> Dict[str, Any]:
-    key = str(work_type)
+def _normalize_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     normalized: List[Dict[str, Any]] = []
     for i, it in enumerate(items or []):
         _id = str(it.get("id") or (i + 1))
@@ -48,21 +25,57 @@ def update_checklist(admin_name: str, work_type: str, items: List[Dict[str, Any]
         normalized.append({"id": _id, "text": text, "order": order})
 
     normalized.sort(key=lambda x: x["order"])
-    # order 재부여
-    normalized = [{**it, "order": idx + 1} for idx, it in enumerate(normalized)]
+    return [{**it, "order": idx + 1} for idx, it in enumerate(normalized)]
 
-    prev = CHECKLISTS.get(key)
-    version = int((prev or {}).get("version", 1))
-    # 내용이 바뀌면 version 1 증가 (단순)
+
+def get_checklist(work_type: str) -> Dict[str, Any]:
+    key = str(work_type)
+    client = get_firestore_client()
+    ref = client.collection("checklists").document(key)
+    snap = ref.get()
+
+    if not snap.exists:
+        initial = {
+            "workType": key,
+            "version": 1,
+            "items": _default_items(key),
+            "updatedAt": datetime.datetime.now().isoformat(),
+        }
+        ref.set(initial)
+        return initial
+
+    data = snap.to_dict() or {}
+    items = sorted((data.get("items") or []), key=lambda x: int(x.get("order") or 0))
+    return {
+        "workType": key,
+        "version": int(data.get("version") or 1),
+        "items": items,
+        "updatedAt": data.get("updatedAt"),
+    }
+
+
+def update_checklist(admin_name: str, work_type: str, items: List[Dict[str, Any]]) -> Dict[str, Any]:
+    key = str(work_type)
+    normalized = _normalize_items(items)
+    now = datetime.datetime.now().isoformat()
+
+    client = get_firestore_client()
+    ref = client.collection("checklists").document(key)
+    snap = ref.get()
+    prev = snap.to_dict() if snap.exists else {}
+
+    version = int((prev or {}).get("version") or 1)
     if prev and (prev.get("items") != normalized):
         version += 1
 
-    CHECKLISTS[key] = {
-        "workType": key,
-        "version": version,
-        "items": normalized,
-        "updatedAt": datetime.datetime.now().isoformat(),
-        "updatedBy": admin_name,
-    }
-
+    ref.set(
+        {
+            "workType": key,
+            "version": version,
+            "items": normalized,
+            "updatedAt": now,
+            "updatedBy": admin_name,
+        },
+        merge=True,
+    )
     return get_checklist(key)
