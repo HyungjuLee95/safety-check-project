@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from openpyxl import Workbook, load_workbook
+from openpyxl.cell.cell import MergedCell
 from openpyxl.drawing.image import Image as XLImage
 from openpyxl.utils import get_column_letter
 from PIL import Image as PILImage
@@ -175,6 +176,22 @@ def _insert_signature_image_pretty(ws, anchor_cell: str, image_bytes: Optional[b
     ws.add_image(img, anchor_cell)
 
 
+def _set_cell_value_safe(ws, coord: str, value: Any) -> None:
+    """Write to a cell while safely handling merged-cell coordinates."""
+    cell = ws[coord]
+    if not isinstance(cell, MergedCell):
+        cell.value = value
+        return
+
+    for merged_range in ws.merged_cells.ranges:
+        if coord in merged_range:
+            ws[merged_range.start_cell.coordinate].value = value
+            return
+
+    # fallback (should rarely happen)
+    ws[cell.coordinate].value = value
+
+
 def _replace_placeholder(cell_value: Any, new_value: str) -> str:
     if not isinstance(cell_value, str):
         return new_value
@@ -264,22 +281,22 @@ def _write_record_to_sheet(
     subadmin_name = str(record.get("subadminName") or "")
     worker_name = inspector
 
-    ws["B1"].value = _replace_placeholder(ws["B1"].value, write_date)
-    ws["B2"].value = _replace_placeholder(ws["B2"].value, inspector)
-    ws["B3"].value = _replace_placeholder(ws["B3"].value, hospital)
-    ws["B4"].value = work_type
-    ws["C4"].value = _replace_placeholder(ws["C4"].value, equipment)
+    _set_cell_value_safe(ws, "B1", _replace_placeholder(ws["B1"].value, write_date))
+    _set_cell_value_safe(ws, "B2", _replace_placeholder(ws["B2"].value, inspector))
+    _set_cell_value_safe(ws, "B3", _replace_placeholder(ws["B3"].value, hospital))
+    _set_cell_value_safe(ws, "B4", work_type)
+    _set_cell_value_safe(ws, "C4", _replace_placeholder(ws["C4"].value, equipment))
 
     ws.row_dimensions[1].height = name_row_height_pt
     ws.row_dimensions[2].height = sign_row_height_pt
     ws.row_dimensions[3].height = name_row_height_pt
     ws.row_dimensions[4].height = sign_row_height_pt
 
-    ws["E1"].value = f"이름: {subadmin_name}" if subadmin_name else "이름:"
-    ws["E3"].value = f"이름: {worker_name}" if worker_name else "이름:"
+    _set_cell_value_safe(ws, "E1", f"이름: {subadmin_name}" if subadmin_name else "이름:")
+    _set_cell_value_safe(ws, "E3", f"이름: {worker_name}" if worker_name else "이름:")
 
-    ws["E2"].value = None
-    ws["E4"].value = None
+    _set_cell_value_safe(ws, "E2", None)
+    _set_cell_value_safe(ws, "E4", None)
 
     _insert_signature_image_pretty(ws, "E2", _decode_signature_image(record.get("subadminSignatureBase64")), padding_px=2)
     _insert_signature_image_pretty(ws, "E4", _decode_signature_image(record.get("signatureBase64")), padding_px=2)
@@ -289,10 +306,10 @@ def _write_record_to_sheet(
     start_row = 7
     for idx, result in enumerate(results, start=1):
         row = start_row + idx - 1
-        ws[f"A{row}"] = idx
-        ws[f"B{row}"] = result.get("question") or ""
-        ws[f"C{row}"] = result.get("value") or ""
-        ws[f"D{row}"] = result.get("comment") or ""
+        _set_cell_value_safe(ws, f"A{row}", idx)
+        _set_cell_value_safe(ws, f"B{row}", result.get("question") or "")
+        _set_cell_value_safe(ws, f"C{row}", result.get("value") or "")
+        _set_cell_value_safe(ws, f"D{row}", result.get("comment") or "")
 
 
 def _copy_template_sheet_content(src_ws, dst_ws) -> None:
