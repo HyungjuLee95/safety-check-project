@@ -1,17 +1,7 @@
 from typing import Any, Dict, List, Optional
 
-from app.storage.memory_store import (
-    USERS,
-    USER_ROLE_MASTER_ADMIN,
-    USER_ROLE_SUB_ADMIN,
-    USER_ROLE_WORKER,
-)
-
-try:
-    from google.cloud import firestore
-except Exception:
-    firestore = None
-
+from app.storage.firestore_client import get_firestore_client
+from app.storage.memory_store import USER_ROLE_MASTER_ADMIN, USER_ROLE_SUB_ADMIN, USER_ROLE_WORKER
 
 VALID_ROLES = {USER_ROLE_MASTER_ADMIN, USER_ROLE_SUB_ADMIN, USER_ROLE_WORKER}
 
@@ -40,13 +30,8 @@ def _normalize_categories(categories: Optional[List[str]]) -> List[str]:
     return out
 
 
-def _get_client() -> Optional[Any]:
-    if firestore is None:
-        return None
-    try:
-        return firestore.Client()
-    except Exception:
-        return None
+def _get_client() -> Any:
+    return get_firestore_client()
 
 
 def _normalize_user_payload(data: Dict[str, Any], user_id: str) -> Dict[str, Any]:
@@ -67,19 +52,8 @@ def _normalize_user_payload(data: Dict[str, Any], user_id: str) -> Dict[str, Any
     }
 
 
-def _list_users_memory() -> List[Dict[str, Any]]:
-    users = []
-    for u in USERS:
-        users.append(_normalize_user_payload(u, str(u.get("id") or "")))
-    return users
-
-
 def list_users() -> List[Dict[str, Any]]:
-    client = _get_client()
-    if client is None:
-        return _list_users_memory()
-
-    docs = client.collection("users").stream()
+    docs = _get_client().collection("users").stream()
     users = []
     for doc in docs:
         data = doc.to_dict() or {}
@@ -99,37 +73,13 @@ def _build_firestore_payload(user: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _login_user_memory(name: str, phone_last4: str) -> Dict[str, Any]:
-    for user in USERS:
-        if user.get("name") == name and user.get("phoneLast4") == phone_last4:
-            return _normalize_user_payload(user, str(user.get("id") or ""))
-
-    new_user = _normalize_user_payload(
-        {
-            "name": name,
-            "phoneLast4": phone_last4,
-            "role": USER_ROLE_WORKER,
-            "categories": [],
-        },
-        f"user-{len(USERS) + 1}",
-    )
-    USERS.append(new_user)
-    return new_user
-
-
 def login_user(name: str, phone_last4: str) -> Dict[str, Any]:
     cleaned_name = str(name or "").strip()
     cleaned_phone_last4 = _normalize_phone_last4(phone_last4)
-
     if not cleaned_name:
         raise ValueError("name is required")
 
-    client = _get_client()
-    if client is None:
-        return _login_user_memory(cleaned_name, cleaned_phone_last4)
-
-    users_col = client.collection("users")
-
+    users_col = _get_client().collection("users")
     user_docs = (
         users_col.where("name", "==", cleaned_name)
         .where("phoneLast4", "==", cleaned_phone_last4)
@@ -167,7 +117,6 @@ def create_subadmin(name: str, phone_last4: str, categories: Optional[List[str]]
     cleaned_name = str(name or "").strip()
     cleaned_phone_last4 = _normalize_phone_last4(phone_last4)
     cleaned_categories = _normalize_categories(categories)
-
     if not cleaned_name:
         raise ValueError("name is required")
 
@@ -181,16 +130,7 @@ def create_subadmin(name: str, phone_last4: str, categories: Optional[List[str]]
         "",
     )
 
-    client = _get_client()
-    if client is None:
-        for user in USERS:
-            if user.get("name") == cleaned_name and user.get("phoneLast4") == cleaned_phone_last4:
-                raise ValueError("subadmin already exists")
-        new_user["id"] = f"subadmin-{len(USERS) + 1}"
-        USERS.append(new_user)
-        return new_user
-
-    users_col = client.collection("users")
+    users_col = _get_client().collection("users")
     existing = (
         users_col.where("name", "==", cleaned_name)
         .where("phoneLast4", "==", cleaned_phone_last4)
@@ -213,25 +153,7 @@ def update_subadmin(subadmin_id: str, name: str, phone_last4: str, categories: O
     if not cleaned_name:
         raise ValueError("name is required")
 
-    client = _get_client()
-    if client is None:
-        for i, user in enumerate(USERS):
-            if str(user.get("id")) != str(subadmin_id):
-                continue
-            updated = _normalize_user_payload(
-                {
-                    "name": cleaned_name,
-                    "phoneLast4": cleaned_phone_last4,
-                    "role": USER_ROLE_SUB_ADMIN,
-                    "categories": cleaned_categories,
-                },
-                str(subadmin_id),
-            )
-            USERS[i] = updated
-            return updated
-        raise ValueError("subadmin not found")
-
-    ref = client.collection("users").document(subadmin_id)
+    ref = _get_client().collection("users").document(subadmin_id)
     snap = ref.get()
     if not snap.exists:
         raise ValueError("subadmin not found")
@@ -250,15 +172,7 @@ def update_subadmin(subadmin_id: str, name: str, phone_last4: str, categories: O
 
 
 def delete_subadmin(subadmin_id: str) -> bool:
-    client = _get_client()
-    if client is None:
-        for i, user in enumerate(USERS):
-            if str(user.get("id")) == str(subadmin_id):
-                USERS.pop(i)
-                return True
-        return False
-
-    ref = client.collection("users").document(subadmin_id)
+    ref = _get_client().collection("users").document(subadmin_id)
     snap = ref.get()
     if not snap.exists:
         return False
