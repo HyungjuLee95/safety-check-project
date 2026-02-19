@@ -102,10 +102,15 @@ def create_inspection_record(payload: Dict[str, Any]) -> Dict[str, Any]:
     return record
 
 
-def list_admin_inspections(start_date: str, end_date: str) -> List[Dict[str, Any]]:
+def list_admin_inspections(start_date: str, end_date: str, requester_role: Optional[str] = None, requester_categories: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     data = [r for r in INSPECTIONS if start_date <= (r.get("date") or "") <= end_date]
+
+    role = str(requester_role or "").strip().upper()
+    category_set = {str(c).strip() for c in (requester_categories or []) if str(c).strip()}
+    if role == "SUB_ADMIN" and category_set:
+        data = [r for r in data if str(r.get("workType") or "") in category_set]
+
     data.sort(key=lambda r: (r.get("date") or "", r.get("updatedAt") or ""), reverse=True)
-    # summary 형태
     out: List[Dict[str, Any]] = []
     for r in data:
         latest = r.get("latestRevision") or {}
@@ -120,13 +125,26 @@ def list_admin_inspections(start_date: str, end_date: str) -> List[Dict[str, Any
             "status": r.get("status"),
             "resultCount": latest.get("resultCount"),
             "improveCount": latest.get("improveCount"),
-            # detail 용으로도 바로 쓸 수 있게 포함
             "results": latest.get("answers") or [],
             "signatureBase64": latest.get("signatureBase64"),
+            "subadminName": r.get("approvedBy"),
+            "subadminSignatureBase64": r.get("subadminSignatureBase64"),
             "createdAt": r.get("createdAt"),
             "updatedAt": r.get("updatedAt"),
         })
     return out
+
+
+def can_subadmin_handle_inspection(inspection_id: str, categories: Optional[List[str]]) -> bool:
+    allowed = {str(c).strip() for c in (categories or []) if str(c).strip()}
+    if not allowed:
+        return False
+
+    for r in INSPECTIONS:
+        if str(r.get("id")) != str(inspection_id):
+            continue
+        return str(r.get("workType") or "") in allowed
+    return False
 
 
 def list_my_inspections(user_name: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:

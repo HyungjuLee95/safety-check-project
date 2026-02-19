@@ -1,5 +1,5 @@
 import React from 'react';
-import { LogOut, ClipboardList, Settings, MapPin } from 'lucide-react';
+import { LogOut, ClipboardList, Settings, MapPin, UserCog } from 'lucide-react';
 
 const AdminHomeView = ({ setView, onLogout, records }) => {
   const totalCount = records?.length || 0;
@@ -56,6 +56,14 @@ const AdminHomeView = ({ setView, onLogout, records }) => {
           <div className="text-left">
             <div className="font-bold text-sm text-slate-700">작업 장소 관리</div>
             <div className="text-[10px] text-slate-400 font-bold mt-1">병원 목록 추가/삭제</div>
+          </div>
+        </button>
+
+        <button onClick={() => setView('admin_subadmins')} className="flex items-center gap-4 p-5 bg-white border border-slate-100 rounded-[1.5rem] hover:border-blue-500 active:scale-95 transition-all shadow-sm">
+          <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl"><UserCog size={22} /></div>
+          <div className="text-left">
+            <div className="font-bold text-sm text-slate-700">서브관리자 권한 관리</div>
+            <div className="text-[10px] text-slate-400 font-bold mt-1">이름/전화뒷자리/카테고리 CRUD</div>
           </div>
         </button>
       </div>

@@ -5,6 +5,10 @@ DB를 붙이기 전까지 프론트/백엔드 API contract를 고정하기 위�
 
 from typing import Any, Dict, List
 
+USER_ROLE_MASTER_ADMIN = "MASTER_ADMIN"
+USER_ROLE_SUB_ADMIN = "SUB_ADMIN"
+USER_ROLE_WORKER = "WORKER"
+
 # settings
 HOSPITALS: List[str] = [
     "서울대병원",
@@ -20,8 +24,22 @@ CHECKLISTS: Dict[str, Dict[str, Any]] = {}
 # inspections
 INSPECTIONS: List[Dict[str, Any]] = []
 
+USERS: List[Dict[str, Any]] = [
+    {
+        "id": "master-admin",
+        "name": "master admin",
+        "phoneLast4": "0000",
+        "role": USER_ROLE_MASTER_ADMIN,
+        "isMasterAdmin": True,
+        "isSubAdmin": False,
+        "isWorker": False,
+    }
+]
+
+
 def add_inspection(record: Dict[str, Any]) -> None:
     INSPECTIONS.append(record)
+
 
 def list_inspections() -> List[Dict[str, Any]]:
     return INSPECTIONS

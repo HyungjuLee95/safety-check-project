@@ -3,11 +3,14 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Any, Dict, List, Optional
 import io
+from pathlib import Path
 
 from app.schemas.inspection import InspectionSubmission
+from app.services.excel_export_service import build_export_filename, build_inspections_excel_bytes
 from app.services.inspections_service import (
     create_inspection_record,
     list_admin_inspections,
+    can_subadmin_handle_inspection,
     list_my_inspections,
     get_my_inspection_detail,
     add_revision,
@@ -26,41 +29,52 @@ def submit_inspection(data: InspectionSubmission):
 
 
 @router.get("/inspections")
-def admin_list_inspections(admin_name: str, start_date: str, end_date: str):
-    return list_admin_inspections(start_date, end_date)
+def admin_list_inspections(
+    admin_name: str,
+    start_date: str,
+    end_date: str,
+    requester_role: Optional[str] = None,
+    requester_categories: Optional[str] = None,
+):
+    categories = [c.strip() for c in str(requester_categories or "").split(",") if c.strip()]
+    return list_admin_inspections(
+        start_date,
+        end_date,
+        requester_role=requester_role,
+        requester_categories=categories,
+    )
 
 
 @router.get("/inspections/export")
-def export_inspections(admin_name: str, start_date: str, end_date: str):
-    data = list_admin_inspections(start_date, end_date)
+def export_inspections(
+    admin_name: str,
+    start_date: str,
+    end_date: str,
+    requester_role: Optional[str] = None,
+    requester_categories: Optional[str] = None,
+):
+    categories = [c.strip() for c in str(requester_categories or "").split(",") if c.strip()]
+    data = list_admin_inspections(
+        start_date,
+        end_date,
+        requester_role=requester_role,
+        requester_categories=categories,
+    )
+
+    backend_root = Path(__file__).resolve().parents[2]
+    template_path = backend_root / "templates" / "EHS_Checklist_HB.xlsx"
+    if not template_path.exists():
+        raise HTTPException(status_code=500, detail=f"excel template not found: {template_path}")
 
     try:
-        from openpyxl import Workbook
-    except Exception:
-        raise HTTPException(status_code=500, detail="openpyxl not installed")
+        excel_bytes = build_inspections_excel_bytes(data, template_path=str(template_path))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"excel export failed: {exc}")
 
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Inspections"
-    ws.append(["id", "date", "name", "hospital", "equipmentName", "workType", "status", "resultCount", "improveCount"])
-    for r in data:
-        ws.append([
-            r.get("id"),
-            r.get("date"),
-            r.get("name"),
-            r.get("hospital"),
-            r.get("equipmentName"),
-            r.get("workType"),
-            r.get("status"),
-            r.get("resultCount"),
-            r.get("improveCount"),
-        ])
-
-    stream = io.BytesIO()
-    wb.save(stream)
+    stream = io.BytesIO(excel_bytes)
     stream.seek(0)
 
-    filename = f"safety_report_{start_date}_to_{end_date}.xlsx"
+    filename = build_export_filename(start_date, end_date)
     return StreamingResponse(
         stream,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -101,6 +115,7 @@ def me_cancel(body: CancelRequest):
 class ApproveRequest(BaseModel):
     subadminName: str
     signatureBase64: str
+    subadminCategories: Optional[List[str]] = []
 
 
 @router.post("/inspections/{inspection_id}/approve")
@@ -109,6 +124,10 @@ def approve(inspection_id: str, body: ApproveRequest):
         raise HTTPException(status_code=400, detail="signatureBase64 is required")
     if not body.subadminName or not body.subadminName.strip():
         raise HTTPException(status_code=400, detail="subadminName is required")
+
+    if body.subadminCategories is not None and len(body.subadminCategories) > 0:
+        if not can_subadmin_handle_inspection(inspection_id, body.subadminCategories):
+            raise HTTPException(status_code=403, detail="subadmin cannot approve this category")
 
     r = approve_inspection(inspection_id, body.subadminName, body.signatureBase64)
     if not r:
@@ -119,10 +138,15 @@ def approve(inspection_id: str, body: ApproveRequest):
 class RejectRequest(BaseModel):
     subadminName: Optional[str] = None
     reason: Optional[str] = ""
+    subadminCategories: Optional[List[str]] = []
 
 
 @router.post("/inspections/{inspection_id}/reject")
 def reject(inspection_id: str, body: RejectRequest):
+    if body.subadminCategories is not None and len(body.subadminCategories) > 0:
+        if not can_subadmin_handle_inspection(inspection_id, body.subadminCategories):
+            raise HTTPException(status_code=403, detail="subadmin cannot reject this category")
+
     r = reject_inspection(inspection_id, body.subadminName, body.reason or "")
     if not r:
         raise HTTPException(status_code=404, detail="inspection not found")
