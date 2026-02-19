@@ -5,10 +5,10 @@ from typing import Any, Dict, List, Optional
 from app.storage.firestore_client import get_firestore_client
 
 # status
-STATUS_PENDING = "PENDING"
-STATUS_SUBMITTED = "SUBMITTED"
-STATUS_REJECTED = "REJECTED"
-STATUS_CANCELLED = "CANCELLED"
+STATUS_PENDING = "PENDING"          # 점검자 1차 제출 후 (승인 대기)
+STATUS_SUBMITTED = "SUBMITTED"      # 서브관리자 승인 완료
+STATUS_REJECTED = "REJECTED"        # 서브관리자 반려
+STATUS_CANCELLED = "CANCELLED"      # 점검자 취소
 
 
 def _normalize_value(value: str) -> str:
@@ -115,6 +115,7 @@ def create_inspection_record(payload: Dict[str, Any]) -> Dict[str, Any]:
         "resultCount": rev["resultCount"],
         "improveCount": rev["improveCount"],
     }
+
     return _save_record(record)
 
 

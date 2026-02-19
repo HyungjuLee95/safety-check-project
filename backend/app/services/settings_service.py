@@ -16,7 +16,6 @@ def _clean_hospitals(hospitals: List[str]) -> List[str]:
 def get_hospitals() -> Dict[str, object]:
     client = get_firestore_client()
     doc = client.collection("settings").document("hospitals").get()
-
     if not doc.exists:
         initial = {"hospitals": [], "updatedAt": datetime.datetime.now().isoformat()}
         client.collection("settings").document("hospitals").set(initial, merge=True)

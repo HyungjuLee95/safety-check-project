@@ -1,7 +1,13 @@
+import unicodedata
 from typing import Any, Dict, List, Optional
 
+from app.storage.memory_store import (
+    USER_ROLE_MASTER_ADMIN,
+    USER_ROLE_SUB_ADMIN,
+    USER_ROLE_WORKER,
+)
 from app.storage.firestore_client import get_firestore_client
-from app.storage.memory_store import USER_ROLE_MASTER_ADMIN, USER_ROLE_SUB_ADMIN, USER_ROLE_WORKER
+
 
 VALID_ROLES = {USER_ROLE_MASTER_ADMIN, USER_ROLE_SUB_ADMIN, USER_ROLE_WORKER}
 
@@ -12,6 +18,15 @@ def _build_flags(role: str) -> Dict[str, bool]:
         "isSubAdmin": role == USER_ROLE_SUB_ADMIN,
         "isWorker": role == USER_ROLE_WORKER,
     }
+
+
+def _normalize_name(name: str) -> str:
+    return unicodedata.normalize("NFKC", str(name or "")).strip()
+
+
+def _name_key(name: str) -> str:
+    normalized = _normalize_name(name)
+    return "".join(normalized.lower().split())
 
 
 def _normalize_phone_last4(phone_last4: str) -> str:
@@ -44,7 +59,7 @@ def _normalize_user_payload(data: Dict[str, Any], user_id: str) -> Dict[str, Any
 
     return {
         "id": user_id,
-        "name": str(data.get("name") or "").strip(),
+        "name": _normalize_name(data.get("name") or ""),
         "phoneLast4": phone_last4,
         "role": role,
         "categories": categories,
@@ -53,7 +68,8 @@ def _normalize_user_payload(data: Dict[str, Any], user_id: str) -> Dict[str, Any
 
 
 def list_users() -> List[Dict[str, Any]]:
-    docs = _get_client().collection("users").stream()
+    client = _get_client()
+    docs = client.collection("users").stream()
     users = []
     for doc in docs:
         data = doc.to_dict() or {}
@@ -64,6 +80,7 @@ def list_users() -> List[Dict[str, Any]]:
 def _build_firestore_payload(user: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "name": user["name"],
+        "nameKey": _name_key(user["name"]),
         "phoneLast4": user["phoneLast4"],
         "role": user["role"],
         "categories": user.get("categories") or [],
@@ -73,20 +90,42 @@ def _build_firestore_payload(user: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def login_user(name: str, phone_last4: str) -> Dict[str, Any]:
-    cleaned_name = str(name or "").strip()
-    cleaned_phone_last4 = _normalize_phone_last4(phone_last4)
-    if not cleaned_name:
-        raise ValueError("name is required")
+def _find_existing_user(users_col: Any, cleaned_name: str, cleaned_phone_last4: str):
+    key = _name_key(cleaned_name)
 
-    users_col = _get_client().collection("users")
-    user_docs = (
-        users_col.where("name", "==", cleaned_name)
+    # 1) 신규 로직: nameKey + phoneLast4
+    query = (
+        users_col.where("nameKey", "==", key)
         .where("phoneLast4", "==", cleaned_phone_last4)
         .limit(1)
         .stream()
     )
-    user_doc = next(user_docs, None)
+    doc = next(query, None)
+    if doc:
+        return doc
+
+    # 2) 구버전 데이터 호환: phoneLast4로 조회 후 Python에서 이름 키 비교
+    legacy_docs = users_col.where("phoneLast4", "==", cleaned_phone_last4).stream()
+    for legacy in legacy_docs:
+        data = legacy.to_dict() or {}
+        if _name_key(data.get("name") or "") == key:
+            users_col.document(legacy.id).set({"nameKey": key}, merge=True)
+            return legacy
+
+    return None
+
+
+def login_user(name: str, phone_last4: str) -> Dict[str, Any]:
+    cleaned_name = _normalize_name(name)
+    cleaned_phone_last4 = _normalize_phone_last4(phone_last4)
+
+    if not cleaned_name:
+        raise ValueError("name is required")
+
+    client = _get_client()
+    users_col = client.collection("users")
+
+    user_doc = _find_existing_user(users_col, cleaned_name, cleaned_phone_last4)
 
     if not user_doc:
         created = _normalize_user_payload(
@@ -114,9 +153,10 @@ def list_subadmins() -> List[Dict[str, Any]]:
 
 
 def create_subadmin(name: str, phone_last4: str, categories: Optional[List[str]]) -> Dict[str, Any]:
-    cleaned_name = str(name or "").strip()
+    cleaned_name = _normalize_name(name)
     cleaned_phone_last4 = _normalize_phone_last4(phone_last4)
     cleaned_categories = _normalize_categories(categories)
+
     if not cleaned_name:
         raise ValueError("name is required")
 
@@ -130,14 +170,10 @@ def create_subadmin(name: str, phone_last4: str, categories: Optional[List[str]]
         "",
     )
 
-    users_col = _get_client().collection("users")
-    existing = (
-        users_col.where("name", "==", cleaned_name)
-        .where("phoneLast4", "==", cleaned_phone_last4)
-        .limit(1)
-        .stream()
-    )
-    if next(existing, None):
+    client = _get_client()
+    users_col = client.collection("users")
+    existing = _find_existing_user(users_col, cleaned_name, cleaned_phone_last4)
+    if existing:
         raise ValueError("subadmin already exists")
 
     ref = users_col.document()
@@ -147,13 +183,14 @@ def create_subadmin(name: str, phone_last4: str, categories: Optional[List[str]]
 
 
 def update_subadmin(subadmin_id: str, name: str, phone_last4: str, categories: Optional[List[str]]) -> Dict[str, Any]:
-    cleaned_name = str(name or "").strip()
+    cleaned_name = _normalize_name(name)
     cleaned_phone_last4 = _normalize_phone_last4(phone_last4)
     cleaned_categories = _normalize_categories(categories)
     if not cleaned_name:
         raise ValueError("name is required")
 
-    ref = _get_client().collection("users").document(subadmin_id)
+    client = _get_client()
+    ref = client.collection("users").document(subadmin_id)
     snap = ref.get()
     if not snap.exists:
         raise ValueError("subadmin not found")
@@ -172,7 +209,8 @@ def update_subadmin(subadmin_id: str, name: str, phone_last4: str, categories: O
 
 
 def delete_subadmin(subadmin_id: str) -> bool:
-    ref = _get_client().collection("users").document(subadmin_id)
+    client = _get_client()
+    ref = client.collection("users").document(subadmin_id)
     snap = ref.get()
     if not snap.exists:
         return False

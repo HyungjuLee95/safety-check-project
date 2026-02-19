@@ -1,3 +1,9 @@
+
+---
+
+## 2) `backend/app/services/checklists_service.py`
+
+```python
 import datetime
 from typing import Any, Dict, List
 
@@ -31,9 +37,9 @@ def _normalize_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 def get_checklist(work_type: str) -> Dict[str, Any]:
     key = str(work_type)
     client = get_firestore_client()
+
     ref = client.collection("checklists").document(key)
     snap = ref.get()
-
     if not snap.exists:
         initial = {
             "workType": key,
@@ -63,7 +69,6 @@ def update_checklist(admin_name: str, work_type: str, items: List[Dict[str, Any]
     ref = client.collection("checklists").document(key)
     snap = ref.get()
     prev = snap.to_dict() if snap.exists else {}
-
     version = int((prev or {}).get("version") or 1)
     if prev and (prev.get("items") != normalized):
         version += 1

@@ -3,6 +3,8 @@ from functools import lru_cache
 from google.cloud import firestore
 from google.oauth2 import service_account
 
+# 요청하신 서비스 계정 정보를 코드에 고정합니다.
+# 보안상 권장되지는 않지만, 사용자 요청에 맞춰 환경변수 없이 동작하도록 구성했습니다.
 SERVICE_ACCOUNT_INFO = {
     "type": "service_account",
     "project_id": "lhb-safety-check",
@@ -20,6 +22,5 @@ SERVICE_ACCOUNT_INFO = {
 
 @lru_cache(maxsize=1)
 def get_firestore_client() -> firestore.Client:
-    project_id = SERVICE_ACCOUNT_INFO["project_id"]
-    credentials = service_account.Credentials.from_service_account_info(SERVICE_ACCOUNT_INFO)
-    return firestore.Client(project=project_id, credentials=credentials)
+    creds = service_account.Credentials.from_service_account_info(SERVICE_ACCOUNT_INFO)
+    return firestore.Client(project=SERVICE_ACCOUNT_INFO["project_id"], credentials=creds)
