@@ -19,6 +19,7 @@ import AdminHomeView from './pages/admin/AdminHomeView';
 import AdminRecordsView from './pages/admin/AdminRecordsView';
 import AdminChecklistManager from './pages/admin/AdminChecklistManager';
 import AdminLocationManager from './pages/admin/AdminLocationManager';
+import AdminSubadminManager from './pages/admin/AdminSubadminManager';
 import AdminRecordDetailView from './pages/admin/AdminRecordDetailView';
 
 // ✅ SUBADMIN
@@ -35,6 +36,7 @@ const App = () => {
   // 서버 데이터
   const [hospitals, setHospitals] = useState([]);
   const [records, setRecords] = useState([]); // admin/subadmin records
+  const [subadmins, setSubadmins] = useState([]);
   const [selectedRecord, setSelectedRecord] = useState(null);
 
   // 내 점검 내역
@@ -81,9 +83,11 @@ const App = () => {
       const end = new Date().toISOString().split('T')[0];
 
       const data = await safetyApi.getInspections({
-        admin_name: user.name, // backend contract
+        admin_name: user.name,
         start_date: start,
         end_date: end,
+        requester_role: user?.role,
+        requester_categories: (user?.categories || []).join(','),
       });
       setRecords(data || []);
     } catch (e) {
@@ -94,9 +98,22 @@ const App = () => {
     }
   };
 
+  const fetchSubadmins = async () => {
+    if (!user?.isMasterAdmin) return;
+    setIsLoading(true);
+    try {
+      const data = await safetyApi.getSubadmins();
+      setSubadmins(data?.subadmins || []);
+    } catch (e) {
+      console.error(e);
+      setSubadmins([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const role = String(user?.role || '').toUpperCase();
-    const isAdminLike = role === 'ADMIN' || role === 'SUBADMIN';
+    const isAdminLike = Boolean(user?.isMasterAdmin || user?.isSubAdmin);
 
     if (!isAdminLike) return;
 
@@ -110,28 +127,30 @@ const App = () => {
     ) {
       fetchAdminLikeRecords();
     }
+
+    if (view === 'admin_subadmins') {
+      fetchSubadmins();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, view]);
 
   // 로그인
-  const handleLogin = (name) => {
-    const lower = String(name || '').toLowerCase();
+  const handleLogin = async (name, phoneLast4) => {
+    setIsLoading(true);
+    try {
+      const loggedInUser = await safetyApi.loginUser({ name, phoneLast4 });
+      setUser(loggedInUser);
 
-    const isSubadmin =
-      lower.includes('subadmin') ||
-      String(name || '').includes('서브') ||
-      String(name || '').includes('부관리자');
-
-    const isAdmin =
-      !isSubadmin &&
-      (lower.includes('admin') || String(name || '').includes('관리자'));
-
-    const role = isAdmin ? 'ADMIN' : isSubadmin ? 'SUBADMIN' : 'USER';
-    setUser({ name, role });
-
-    if (role === 'ADMIN') setView('admin_home');
-    else if (role === 'SUBADMIN') setView('subadmin_home');
-    else setView('home');
+      if (loggedInUser?.isMasterAdmin) setView('admin_home');
+      else if (loggedInUser?.isSubAdmin) setView('subadmin_home');
+      else setView('home');
+    } catch (e) {
+      console.error(e);
+      const msg = e?.response?.data?.detail;
+      alert(msg || '로그인 실패');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // 로그아웃
@@ -140,6 +159,7 @@ const App = () => {
     setView('login');
 
     setRecords([]);
+    setSubadmins([]);
     setSelectedRecord(null);
 
     setMyRecords([]);
@@ -191,16 +211,27 @@ const App = () => {
   const handleInspectionSubmit = async (answers, signatureBase64) => {
     setIsLoading(true);
     try {
-      await safetyApi.submitInspection({
-        userName: user.name,
-        date: setupData.date,
-        hospital: setupData.hospital,
-        equipmentName: setupData.equipmentName,
-        workType: setupData.workType,
-        checklistVersion: 1,
-        answers,
-        signatureBase64,
-      });
+      if (editContext) {
+        await safetyApi.resubmitMyInspection({
+          userName: user.name,
+          date: setupData.date,
+          hospital: setupData.hospital,
+          equipmentName: setupData.equipmentName,
+          answers,
+          signatureBase64,
+        });
+      } else {
+        await safetyApi.submitInspection({
+          userName: user.name,
+          date: setupData.date,
+          hospital: setupData.hospital,
+          equipmentName: setupData.equipmentName,
+          workType: setupData.workType,
+          checklistVersion: 1,
+          answers,
+          signatureBase64,
+        });
+      }
 
       setEditContext(null);
       setTempResults(null);
@@ -248,6 +279,7 @@ const handleApprove = async ({ inspectionId, subadminName, signatureBase64 }) =>
   // ✅ 서명 누락이면 요청 자체를 막기 (422 방지)
   if (!signatureBase64 || String(signatureBase64).trim().length < 50) {
     alert('서명이 누락되었습니다. 서명을 다시 입력해주세요.');
+    console.log('[approve] missing signatureBase64', { inspectionId, subadminName, signatureBase64 });
     return;
   }
   if (!subadminName || !String(subadminName).trim()) {
@@ -257,7 +289,7 @@ const handleApprove = async ({ inspectionId, subadminName, signatureBase64 }) =>
 
   setIsLoading(true);
   try {
-    await safetyApi.approveInspection(inspectionId, { subadminName, signatureBase64 });
+    await safetyApi.approveInspection(inspectionId, { subadminName, signatureBase64, subadminCategories: user?.categories || [] });
     alert('승인 처리되었습니다.');
 
     // 목록 갱신
@@ -284,7 +316,7 @@ const handleReject = async ({ inspectionId, subadminName, reason }) => {
 
   setIsLoading(true);
   try {
-    await safetyApi.rejectInspection(inspectionId, { subadminName, reason });
+    await safetyApi.rejectInspection(inspectionId, { subadminName, reason, subadminCategories: user?.categories || [] });
     alert('반려 처리되었습니다.');
 
     await fetchAdminLikeRecords();
@@ -415,6 +447,27 @@ const handleReject = async ({ inspectionId, subadminName, reason }) => {
           hospitals={hospitals}
           setHospitals={setHospitals}
           onBack={() => setView('admin_home')}
+        />
+      )}
+
+      {view === 'admin_subadmins' && (
+        <AdminSubadminManager
+          categories={workTypes}
+          subadmins={subadmins}
+          onRefresh={fetchSubadmins}
+          onBack={() => setView('admin_home')}
+          onCreate={async (payload) => {
+            await safetyApi.createSubadmin(payload);
+            await fetchSubadmins();
+          }}
+          onUpdate={async (id, payload) => {
+            await safetyApi.updateSubadmin(id, payload);
+            await fetchSubadmins();
+          }}
+          onDelete={async (id) => {
+            await safetyApi.deleteSubadmin(id);
+            await fetchSubadmins();
+          }}
         />
       )}
 
