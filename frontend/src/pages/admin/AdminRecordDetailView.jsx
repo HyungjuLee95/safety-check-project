@@ -57,7 +57,15 @@ const AdminRecordDetailView = ({ user, record, onBack, onApprove, onReject }) =>
     const isTouch = !!e.touches?.[0];
     const clientX = isTouch ? e.touches[0].clientX : e.clientX;
     const clientY = isTouch ? e.touches[0].clientY : e.clientY;
-    return { x: clientX - rect.left, y: clientY - rect.top };
+
+    // CSS로 축소/확대한 캔버스에서도 포인터 좌표를 실제 캔버스 픽셀 좌표로 보정
+    const scaleX = c.width / rect.width;
+    const scaleY = c.height / rect.height;
+
+    return {
+      x: (clientX - rect.left) * scaleX,
+      y: (clientY - rect.top) * scaleY,
+    };
   };
 
   const startDraw = (e) => {
@@ -215,11 +223,11 @@ const AdminRecordDetailView = ({ user, record, onBack, onApprove, onReject }) =>
             </p>
 
             {subSig ? (
-              <div className="w-full flex justify-center">
+              <div className="w-full h-24 flex items-center justify-center rounded-xl border border-slate-200 bg-white p-2 shadow-sm">
                 <img
                   src={subSig}
                   alt="subadmin signature"
-                  className="max-h-28 w-auto rounded-xl border border-slate-200 bg-white p-2 shadow-sm"
+                  className="h-full w-full object-contain"
                 />
               </div>
             ) : (
@@ -239,11 +247,11 @@ const AdminRecordDetailView = ({ user, record, onBack, onApprove, onReject }) =>
             </p>
 
             {workerSig ? (
-              <div className="w-full flex justify-center">
+              <div className="w-full h-24 flex items-center justify-center rounded-xl border border-slate-200 bg-white p-2 shadow-sm">
                 <img
                   src={workerSig}
                   alt="worker signature"
-                  className="max-h-28 w-auto rounded-xl border border-slate-200 bg-white p-2 shadow-sm"
+                  className="h-full w-full object-contain"
                 />
               </div>
             ) : (
