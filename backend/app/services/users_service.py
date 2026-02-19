@@ -1,13 +1,12 @@
 import unicodedata
 from typing import Any, Dict, List, Optional
 
-from app.storage.memory_store import (
-    USER_ROLE_MASTER_ADMIN,
-    USER_ROLE_SUB_ADMIN,
-    USER_ROLE_WORKER,
-)
 from app.storage.firestore_client import get_firestore_client
 
+
+USER_ROLE_MASTER_ADMIN = "MASTER_ADMIN"
+USER_ROLE_SUB_ADMIN = "SUB_ADMIN"
+USER_ROLE_WORKER = "WORKER"
 
 VALID_ROLES = {USER_ROLE_MASTER_ADMIN, USER_ROLE_SUB_ADMIN, USER_ROLE_WORKER}
 

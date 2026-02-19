@@ -18,4 +18,12 @@
 ## 실행
 
 ```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+cd backend
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+
+## users 로그인 매칭
+
+- `users` 문서에는 `nameKey`(이름 정규화 키) 필드를 함께 저장합니다.
+- 로그인 시 `nameKey + phoneLast4`로 우선 조회하고, 기존 데이터 호환을 위해 `phoneLast4` 기반 보정 조회도 수행합니다.
