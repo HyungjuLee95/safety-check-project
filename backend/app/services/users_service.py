@@ -103,7 +103,18 @@ def _login_user_memory(name: str, phone_last4: str) -> Dict[str, Any]:
     for user in USERS:
         if user.get("name") == name and user.get("phoneLast4") == phone_last4:
             return _normalize_user_payload(user, str(user.get("id") or ""))
-    raise ValueError("user not found")
+
+    new_user = _normalize_user_payload(
+        {
+            "name": name,
+            "phoneLast4": phone_last4,
+            "role": USER_ROLE_WORKER,
+            "categories": [],
+        },
+        f"user-{len(USERS) + 1}",
+    )
+    USERS.append(new_user)
+    return new_user
 
 
 def login_user(name: str, phone_last4: str) -> Dict[str, Any]:
@@ -128,7 +139,19 @@ def login_user(name: str, phone_last4: str) -> Dict[str, Any]:
     user_doc = next(user_docs, None)
 
     if not user_doc:
-        raise ValueError("user not found")
+        created = _normalize_user_payload(
+            {
+                "name": cleaned_name,
+                "phoneLast4": cleaned_phone_last4,
+                "role": USER_ROLE_WORKER,
+                "categories": [],
+            },
+            "",
+        )
+        ref = users_col.document()
+        created["id"] = ref.id
+        ref.set(_build_firestore_payload(created), merge=True)
+        return created
 
     data = user_doc.to_dict() or {}
     normalized = _normalize_user_payload(data, user_doc.id)
