@@ -1,19 +1,7 @@
 import axios from 'axios';
 
-function resolveDefaultApiBaseUrl() {
-  if (typeof window === 'undefined') {
-    return 'http://localhost:8000/api/v1';
-  }
-
-  const { protocol, hostname } = window.location;
-  const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
-  const apiHost = isLocalhost ? 'localhost' : hostname;
-
-  return `${protocol}//${apiHost}:8000/api/v1`;
-}
-
-// VITE_API_BASE_URL가 있으면 우선 사용하고, 없으면 현재 접속 호스트 기준으로 API 주소를 계산한다.
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || resolveDefaultApiBaseUrl()).trim();
+// FastAPI 백엔드 서버 주소 (기본: 외부 접근 IP, 필요 시 .env의 VITE_API_BASE_URL로 덮어쓰기)
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://210.123.0.166:8000/api/v1').trim();
 
 const api = axios.create({
   baseURL: API_BASE_URL,
