@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // FastAPI 백엔드 서버 주소 (기본: 외부 접근 IP, 필요 시 .env의 VITE_API_BASE_URL로 덮어쓰기)
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'x').trim();
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'https://safety-backend-ryzxipd66a-du.a.run.app/api/v1').trim();
 
 const api = axios.create({
   baseURL: API_BASE_URL,
