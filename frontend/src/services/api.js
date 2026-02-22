@@ -1,7 +1,19 @@
 import axios from 'axios';
 
-// FastAPI 백엔드 서버 주소 (로컬 개발 환경 기준)
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+function resolveDefaultApiBaseUrl() {
+  if (typeof window === 'undefined') {
+    return 'http://localhost:8000/api/v1';
+  }
+
+  const { protocol, hostname } = window.location;
+  const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+  const apiHost = isLocalhost ? 'localhost' : hostname;
+
+  return `${protocol}//${apiHost}:8000/api/v1`;
+}
+
+// VITE_API_BASE_URL가 있으면 우선 사용하고, 없으면 현재 접속 호스트 기준으로 API 주소를 계산한다.
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || resolveDefaultApiBaseUrl()).trim();
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -50,6 +62,19 @@ export const safetyApi = {
       console.error('장소 목록 로딩 실패:', error);
       return {
         hospitals: ["서울대병원", "아산병원", "삼성서울병원", "세브란스병원", "경희대병원"]
+      };
+    }
+  },
+
+  // 점검 업무(카테고리) 목록 조회
+  getWorkTypes: async () => {
+    try {
+      const response = await api.get('/settings/work-types');
+      return response.data;
+    } catch (error) {
+      console.error('점검 업무 목록 로딩 실패:', error);
+      return {
+        workTypes: ['X-ray 설치작업', 'MR 설치작업', 'CT 작업', '정기 유지보수']
       };
     }
   },
@@ -239,6 +264,17 @@ export const safetyApi = {
       return response.data;
     } catch (error) {
       console.error('장소 목록 업데이트 실패:', error);
+      throw error;
+    }
+  },
+
+  // 점검 업무 목록 수정/업데이트
+  updateWorkTypes: async (adminName, workTypes) => {
+    try {
+      const response = await api.post('/settings/work-types', { adminName, workTypes });
+      return response.data;
+    } catch (error) {
+      console.error('점검 업무 목록 업데이트 실패:', error);
       throw error;
     }
   }
