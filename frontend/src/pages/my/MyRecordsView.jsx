@@ -1,16 +1,41 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { ArrowLeft, RotateCcw, ChevronRight } from 'lucide-react';
 import { statusLabel } from '../../utils/inspectionFormat';
+
+const STATUS_TABS = [
+  { key: 'ALL', label: '전체' },
+  { key: 'PENDING', label: '승인대기' },
+  { key: 'SUBMITTED', label: '승인완료' },
+  { key: 'REJECTED', label: '반려' },
+];
+
+const normalizeStatus = (raw) => {
+  const s = String(raw || '').trim().toUpperCase();
+  if (s === 'SUBMIT' || s === 'SUBMITTED' || s === 'APPROVED') return 'SUBMITTED';
+  if (s === 'REJECT' || s === 'REJECTED') return 'REJECTED';
+  return s;
+};
 
 const MyRecordsView = ({ records, onBack, onRefresh, onDetail }) => {
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
+  const [tab, setTab] = useState('ALL');
 
-  const filtered = (records || []).filter(r => {
-    if (start && r.date < start) return false;
-    if (end && r.date > end) return false;
-    return true;
-  });
+  const filtered = useMemo(() => {
+    return (records || []).filter((r) => {
+      if (start && r.date < start) return false;
+      if (end && r.date > end) return false;
+      if (tab !== 'ALL' && normalizeStatus(r.status) !== tab) return false;
+      return true;
+    });
+  }, [records, start, end, tab]);
+
+  const tabButtonClass = (key) => {
+    const active = tab === key;
+    return `flex-1 py-2 rounded-xl font-black text-[11px] transition-all active:scale-95 ${
+      active ? 'bg-slate-900 text-white shadow' : 'bg-white text-slate-500 border border-slate-100'
+    }`;
+  };
 
   return (
     <div className="flex flex-col h-full animate-in slide-in-from-right-8">
@@ -20,10 +45,16 @@ const MyRecordsView = ({ records, onBack, onRefresh, onDetail }) => {
       </div>
 
       <div className="space-y-3 mb-6">
+        <div className="flex gap-2">
+          {STATUS_TABS.map((item) => (
+            <button key={item.key} className={tabButtonClass(item.key)} onClick={() => setTab(item.key)}>{item.label}</button>
+          ))}
+        </div>
+
         <div className="flex gap-2 items-center bg-slate-50 p-2 rounded-2xl">
-          <input type="date" className="flex-1 p-2 bg-white rounded-xl text-[10px] font-bold" value={start} onChange={e => setStart(e.target.value)} />
+          <input type="date" className="flex-1 p-2 bg-white rounded-xl text-[10px] font-bold" value={start} onChange={(e) => setStart(e.target.value)} />
           <span className="text-slate-300">~</span>
-          <input type="date" className="flex-1 p-2 bg-white rounded-xl text-[10px] font-bold" value={end} onChange={e => setEnd(e.target.value)} />
+          <input type="date" className="flex-1 p-2 bg-white rounded-xl text-[10px] font-bold" value={end} onChange={(e) => setEnd(e.target.value)} />
           <button onClick={() => { setStart(''); setEnd(''); }} className="p-2 text-blue-500 active:scale-90"><RotateCcw size={14} /></button>
         </div>
 
@@ -43,8 +74,11 @@ const MyRecordsView = ({ records, onBack, onRefresh, onDetail }) => {
               <div>
                 <p className="font-bold text-slate-800">{r.date}</p>
                 <p className="text-[10px] text-slate-400 font-medium">{r.hospital} · {r.equipmentName || '장비명 없음'}</p>
+                {!!r.rejectReason && normalizeStatus(r.status) === 'REJECTED' && (
+                  <p className="text-[10px] text-red-500 font-bold mt-1">반려사유: {r.rejectReason}</p>
+                )}
               </div>
-              <span className={`text-[9px] px-2 py-1 rounded-lg font-black border ${r.status === 'CANCELLED' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-green-50 text-green-600 border-green-100'}`}>
+              <span className={`text-[9px] px-2 py-1 rounded-lg font-black border ${normalizeStatus(r.status) === 'CANCELLED' ? 'bg-red-50 text-red-600 border-red-100' : normalizeStatus(r.status) === 'REJECTED' ? 'bg-orange-50 text-orange-600 border-orange-100' : 'bg-green-50 text-green-600 border-green-100'}`}>
                 {statusLabel(r.status)}
               </span>
             </div>

@@ -143,6 +143,7 @@ def list_admin_inspections(start_date: str, end_date: str, requester_role: Optio
                 "status": r.get("status"),
                 "resultCount": latest.get("resultCount"),
                 "improveCount": latest.get("improveCount"),
+                "rejectReason": r.get("rejectReason") or "",
                 "results": latest.get("answers") or [],
                 "signatureBase64": latest.get("signatureBase64"),
                 "subadminName": r.get("approvedBy"),
@@ -186,6 +187,7 @@ def list_my_inspections(user_name: str, start_date: Optional[str] = None, end_da
                 "workType": r.get("workType"),
                 "status": r.get("status"),
                 "improveCount": latest.get("improveCount"),
+                "rejectReason": r.get("rejectReason") or "",
             }
         )
     return out
@@ -218,6 +220,8 @@ def get_my_inspection_detail(user_name: str, date: str, hospital: str, equipment
         "workType": r.get("workType"),
         "status": r.get("status"),
         "latestRevision": r.get("latestRevision"),
+        "rejectReason": r.get("rejectReason") or "",
+        "rejectedAt": r.get("rejectedAt"),
     }
 
 
