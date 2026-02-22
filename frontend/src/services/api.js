@@ -1,13 +1,19 @@
 import axios from 'axios';
 
-// FastAPI 백엔드 서버 주소
-// 우선순위:
-// 1) VITE_API_BASE_URL
-// 2) Cloud Run 백엔드 기본값
-const API_BASE_URL = (
-  import.meta.env.VITE_API_BASE_URL ||
-  'https://safety-backend-ryzxipd66a-du.a.run.app/api/v1'
-).trim();
+function resolveDefaultApiBaseUrl() {
+  if (typeof window === 'undefined') {
+    return 'http://localhost:8000/api/v1';
+  }
+
+  const { protocol, hostname } = window.location;
+  const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+  const apiHost = isLocalhost ? 'localhost' : hostname;
+
+  return `${protocol}//${apiHost}:8000/api/v1`;
+}
+
+// VITE_API_BASE_URL가 있으면 우선 사용하고, 없으면 현재 접속 호스트 기준으로 API 주소를 계산한다.
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || resolveDefaultApiBaseUrl()).trim();
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -37,7 +43,6 @@ export const safetyApi = {
   // --- 1. 공통 및 사용자 설정 조회 ---
 
   loginUser: async (payload) => {
-    // payload: { name, phoneLast4 }
     try {
       const response = await api.post('/users/login', payload);
       return response.data;
@@ -47,7 +52,6 @@ export const safetyApi = {
     }
   },
 
-  // 작업 장소(병원) 목록 조회
   getHospitals: async () => {
     try {
       const response = await api.get('/settings/hospitals');
@@ -55,12 +59,11 @@ export const safetyApi = {
     } catch (error) {
       console.error('장소 목록 로딩 실패:', error);
       return {
-        hospitals: ["서울대병원", "아산병원", "삼성서울병원", "세브란스병원", "경희대병원"]
+        hospitals: ['서울대병원', '아산병원', '삼성서울병원', '세브란스병원', '경희대병원'],
       };
     }
   },
 
-  // 점검 업무(카테고리) 목록 조회
   getWorkTypes: async () => {
     try {
       const response = await api.get('/settings/work-types');
@@ -68,12 +71,11 @@ export const safetyApi = {
     } catch (error) {
       console.error('점검 업무 목록 로딩 실패:', error);
       return {
-        workTypes: ['X-ray 설치작업', 'MR 설치작업', 'CT 작업', '정기 유지보수']
+        workTypes: ['X-ray 설치작업', 'MR 설치작업', 'CT 작업', '정기 유지보수'],
       };
     }
   },
 
-  // 카테고리별 체크리스트 조회
   getChecklist: async (workType) => {
     try {
       const response = await api.get(`/checklists/${encodeURIComponent(workType)}`);
@@ -82,19 +84,17 @@ export const safetyApi = {
       console.error('체크리스트 로딩 실패:', error);
       return {
         items: [
-          { id: "1", text: "작업 전 안전 보호구(헬멧, 안전화 등)를 착용하였는가?", order: 1, code: "a" },
-          { id: "2", text: "작업 전 본인의 건강 상태는 양호한가?", order: 2, code: "b" },
-          { id: "3", text: "사용할 공구 및 장비의 육안 점검을 실시하였는가?", order: 3, code: "c" },
-          { id: "4", text: "사전 안전수칙 및 작업 절차를 숙지하였는가?", order: 4, code: "d" },
-          { id: "5", text: "작업장 주변 정리정돈 및 위험 요소 제거를 완료했는가?", order: 5, code: "e" }
-        ]
+          { id: '1', text: '작업 전 안전 보호구(헬멧, 안전화 등)를 착용하였는가?', order: 1, code: 'a' },
+          { id: '2', text: '작업 전 본인의 건강 상태는 양호한가?', order: 2, code: 'b' },
+          { id: '3', text: '사용할 공구 및 장비의 육안 점검을 실시하였는가?', order: 3, code: 'c' },
+          { id: '4', text: '사전 안전수칙 및 작업 절차를 숙지하였는가?', order: 4, code: 'd' },
+          { id: '5', text: '작업장 주변 정리정돈 및 위험 요소 제거를 완료했는가?', order: 5, code: 'e' },
+        ],
       };
     }
   },
 
   // --- 2. 점검 결과 제출 (User) ---
-
-  // 점검표 및 서명 데이터 제출
   submitInspection: async (inspectionData) => {
     try {
       const response = await api.post('/inspections', inspectionData);
@@ -106,7 +106,6 @@ export const safetyApi = {
   },
 
   // --- 2-1. 유저 내 점검 내역 ---
-
   getMyInspections: async (params) => {
     try {
       const response = await api.get('/me/inspections', { params });
@@ -148,7 +147,6 @@ export const safetyApi = {
   },
 
   // --- 3. 관리자 전용 기능 (Admin) ---
-
   getSubadmins: async () => {
     const response = await api.get('/subadmins');
     return response.data;
@@ -182,9 +180,10 @@ export const safetyApi = {
     }
   },
 
+  // 점검 기록 PDF 다운로드
   exportInspections: async (params) => {
     try {
-      const response = await api.get('/inspections/export', {
+      const response = await api.get('/inspections/export-pdf', {
         params,
         responseType: 'blob',
       });
@@ -195,7 +194,7 @@ export const safetyApi = {
 
       const disposition = response.headers?.['content-disposition'] || '';
       const match = disposition.match(/filename="?([^";]+)"?/i);
-      const serverFileName = match?.[1] || `safety_report_${new Date().getTime()}.xlsx`;
+      const serverFileName = match?.[1] || `safety_report_${new Date().getTime()}.pdf`;
       link.setAttribute('download', makeIncrementedFileName(serverFileName));
 
       document.body.appendChild(link);
@@ -204,7 +203,7 @@ export const safetyApi = {
       link.parentNode.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (error) {
-      console.error('엑셀 다운로드 실패:', error);
+      console.error('PDF 다운로드 실패:', error);
       throw error;
     }
   },
@@ -239,6 +238,7 @@ export const safetyApi = {
     }
   },
 
+  // 점검 업무 목록 수정/업데이트
   updateWorkTypes: async (adminName, workTypes) => {
     try {
       const response = await api.post('/settings/work-types', { adminName, workTypes });
@@ -247,7 +247,7 @@ export const safetyApi = {
       console.error('점검 업무 목록 업데이트 실패:', error);
       throw error;
     }
-  }
+  },
 };
 
 export default api;

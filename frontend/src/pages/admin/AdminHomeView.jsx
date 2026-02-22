@@ -41,7 +41,7 @@ const AdminHomeView = ({ setView, onLogout, records }) => {
         <button onClick={() => setView('admin_records')} className="flex items-center gap-4 p-5 bg-white border border-slate-100 rounded-[1.5rem] hover:border-blue-500 active:scale-95 transition-all shadow-sm">
           <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl"><ClipboardList size={22} /></div>
           <div className="text-left">
-            <div className="font-bold text-sm text-slate-700">기록 조회 및 엑셀</div>
+            <div className="font-bold text-sm text-slate-700">점검건 리스트</div>
             <div className="text-[10px] text-slate-400 font-bold mt-1">기간/검색/다운로드</div>
           </div>
         </button>

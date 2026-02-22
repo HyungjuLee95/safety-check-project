@@ -7,6 +7,7 @@ from pathlib import Path
 
 from app.schemas.inspection import InspectionSubmission
 from app.services.excel_export_service import build_export_filename, build_inspections_excel_bytes
+from app.services.pdf_export_service import build_export_pdf_filename, build_inspections_pdf_bytes
 from app.services.inspections_service import (
     create_inspection_record,
     list_admin_inspections,
@@ -81,6 +82,39 @@ def export_inspections(
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 
+
+
+
+@router.get("/inspections/export-pdf")
+def export_inspections_pdf(
+    admin_name: str,
+    start_date: str,
+    end_date: str,
+    requester_role: Optional[str] = None,
+    requester_categories: Optional[str] = None,
+):
+    categories = [c.strip() for c in str(requester_categories or "").split(",") if c.strip()]
+    data = list_admin_inspections(
+        start_date,
+        end_date,
+        requester_role=requester_role,
+        requester_categories=categories,
+    )
+
+    try:
+        pdf_bytes = build_inspections_pdf_bytes(data)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"pdf export failed: {exc}")
+
+    stream = io.BytesIO(pdf_bytes)
+    stream.seek(0)
+
+    filename = build_export_pdf_filename(start_date, end_date)
+    return StreamingResponse(
+        stream,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 @router.get("/me/inspections")
 def me_list_inspections(userName: str, start_date: Optional[str] = None, end_date: Optional[str] = None):

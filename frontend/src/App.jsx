@@ -154,6 +154,19 @@ const App = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, view]);
 
+
+  const notifyRejectedRecords = (items) => {
+    const rejected = (items || []).filter((r) => String(r?.status || '').toUpperCase() === 'REJECTED');
+    if (!rejected.length) return;
+
+    const lines = rejected
+      .slice(0, 3)
+      .map((r, idx) => `${idx + 1}) ${r.date || '-'} ${r.workType || ''} - ${r.rejectReason || '반려 사유 미기재'}`);
+
+    const suffix = rejected.length > 3 ? `\n외 ${rejected.length - 3}건` : '';
+    alert(`반려된 점검건이 ${rejected.length}건 있습니다.\n${lines.join('\n')}${suffix}`);
+  };
+
   // 로그인
   const handleLogin = async (name, phoneLast4) => {
     setIsLoading(true);
@@ -166,6 +179,7 @@ const App = () => {
       else {
         const myData = await safetyApi.getMyInspections({ userName: loggedInUser.name });
         setMyRecords(myData || []);
+        notifyRejectedRecords(myData || []);
         setView('home');
       }
     } catch (e) {
