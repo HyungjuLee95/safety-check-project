@@ -1,7 +1,13 @@
 import axios from 'axios';
 
-// FastAPI 백엔드 서버 주소 (기본: 외부 접근 IP, 필요 시 .env의 VITE_API_BASE_URL로 덮어쓰기)
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'https://safety-backend-ryzxipd66a-du.a.run.app/api/v1').trim();
+// FastAPI 백엔드 서버 주소
+// 우선순위:
+// 1) VITE_API_BASE_URL
+// 2) Cloud Run 백엔드 기본값
+const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL ||
+  'https://safety-backend-ryzxipd66a-du.a.run.app/api/v1'
+).trim();
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -54,6 +60,19 @@ export const safetyApi = {
     }
   },
 
+  // 점검 업무(카테고리) 목록 조회
+  getWorkTypes: async () => {
+    try {
+      const response = await api.get('/settings/work-types');
+      return response.data;
+    } catch (error) {
+      console.error('점검 업무 목록 로딩 실패:', error);
+      return {
+        workTypes: ['X-ray 설치작업', 'MR 설치작업', 'CT 작업', '정기 유지보수']
+      };
+    }
+  },
+
   // 카테고리별 체크리스트 조회
   getChecklist: async (workType) => {
     try {
@@ -76,28 +95,19 @@ export const safetyApi = {
   // --- 2. 점검 결과 제출 (User) ---
 
   // 점검표 및 서명 데이터 제출
-  // inspectionData 구조:
-  // {
-  //   userName, date, hospital, equipmentName, workType,
-  //   checklistVersion, answers: [{itemId, question, value, comment?}], signatureBase64
-  // }
   submitInspection: async (inspectionData) => {
     try {
       const response = await api.post('/inspections', inspectionData);
       return response.data;
     } catch (error) {
       console.error('점검 결과 제출 실패:', error);
-      // 백엔드에서 "점검 필요 내용을 기재해주세요"를 400으로 보낼 수 있음
-      // 프론트에서 제출 전 검증으로 팝업 띄우는 방식이 UX 최선.
       throw error;
     }
   },
 
-  // --- 2-1. 유저 내 점검 내역 (추후 App.jsx에서 메뉴 연결) ---
+  // --- 2-1. 유저 내 점검 내역 ---
 
-  // 내 점검 목록: 날짜 + 상태 + 개선필요 개수 (+ 병원/장비)
   getMyInspections: async (params) => {
-    // params: { userName, start_date?, end_date? }
     try {
       const response = await api.get('/me/inspections', { params });
       return response.data;
@@ -107,9 +117,7 @@ export const safetyApi = {
     }
   },
 
-  // 내 점검 상세(최신 revision)
   getMyInspectionDetail: async (params) => {
-    // params: { userName, date, hospital, equipmentName? }
     try {
       const response = await api.get('/me/inspections/detail', { params });
       return response.data;
@@ -119,9 +127,7 @@ export const safetyApi = {
     }
   },
 
-  // (선택) 내 점검 취소 - 삭제가 아니라 status만 CANCELLED로 변경
   cancelMyInspection: async (payload) => {
-    // payload: { userName, date, hospital, equipmentName? }
     try {
       const response = await api.post('/me/inspections/cancel', payload);
       return response.data;
@@ -131,9 +137,7 @@ export const safetyApi = {
     }
   },
 
-  // 내 점검 재제출(기존 레코드에 revision 추가)
   resubmitMyInspection: async (payload) => {
-    // payload: { userName, date, hospital, equipmentName?, answers, signatureBase64? }
     try {
       const response = await api.post('/me/inspections/resubmit', payload);
       return response.data;
@@ -144,7 +148,6 @@ export const safetyApi = {
   },
 
   // --- 3. 관리자 전용 기능 (Admin) ---
-
 
   getSubadmins: async () => {
     const response = await api.get('/subadmins');
@@ -166,7 +169,6 @@ export const safetyApi = {
     return response.data;
   },
 
-  // 전체 점검 내역 조회 (필터링 포함)
   getInspections: async (params) => {
     try {
       const response = await api.get('/inspections', { params });
@@ -180,7 +182,6 @@ export const safetyApi = {
     }
   },
 
-  // 점검 기록 엑셀 다운로드 (아직 mock)
   exportInspections: async (params) => {
     try {
       const response = await api.get('/inspections/export', {
@@ -208,20 +209,16 @@ export const safetyApi = {
     }
   },
 
-  // (SUBADMIN) 승인/반려
   approveInspection: async (id, payload) => {
-    // payload: { subadminName?, signatureBase64? }
     const response = await api.post(`/inspections/${id}/approve`, payload || {});
     return response.data;
   },
 
   rejectInspection: async (id, payload) => {
-    // payload: { subadminName?, reason? }
     const response = await api.post(`/inspections/${id}/reject`, payload || {});
     return response.data;
   },
 
-  // 체크리스트 항목 수정/업데이트 (in-memory 반영)
   updateChecklist: async (data) => {
     try {
       const response = await api.post('/checklists', data);
@@ -232,13 +229,22 @@ export const safetyApi = {
     }
   },
 
-  // 작업 장소 목록 수정/업데이트 (in-memory 반영)
   updateHospitals: async (adminName, hospitals) => {
     try {
       const response = await api.post('/settings/hospitals', { adminName, hospitals });
       return response.data;
     } catch (error) {
       console.error('장소 목록 업데이트 실패:', error);
+      throw error;
+    }
+  },
+
+  updateWorkTypes: async (adminName, workTypes) => {
+    try {
+      const response = await api.post('/settings/work-types', { adminName, workTypes });
+      return response.data;
+    } catch (error) {
+      console.error('점검 업무 목록 업데이트 실패:', error);
       throw error;
     }
   }

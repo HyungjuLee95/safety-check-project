@@ -30,7 +30,9 @@ const AdminRecordDetailView = ({ user, record, onBack, onApprove, onReject }) =>
 
   const normalizedRole = String(user?.role || '').trim().toUpperCase();
   const isSubadmin = normalizedRole === 'SUBADMIN' || normalizedRole === 'SUB_ADMIN';
+  const isMasterAdmin = normalizedRole === 'MASTER_ADMIN';
   const isPending = String(record?.status || '').toUpperCase() === 'PENDING';
+  const canApproveOrReject = isPending && (isSubadmin || isMasterAdmin);
 
   // --- 서명 모달(승인용) ---
   const [openSign, setOpenSign] = useState(false);
@@ -106,7 +108,6 @@ const AdminRecordDetailView = ({ user, record, onBack, onApprove, onReject }) =>
     if (!c) return;
 
     // 간단 검증: 완전 흰색이면 서명 없다고 판단(대충)
-    // (좀 더 정확한 검증은 픽셀 검사 가능하지만 지금은 가볍게)
     const dataUrl = c.toDataURL('image/png');
     if (!dataUrl || dataUrl.length < 200) {
       alert('서명을 입력해주세요.');
@@ -164,8 +165,8 @@ const AdminRecordDetailView = ({ user, record, onBack, onApprove, onReject }) =>
           <p className="text-[11px] font-bold text-slate-400 mt-3">상태: {record.status}</p>
         )}
 
-        {/* SUBADMIN 승인/반려 */}
-        {isSubadmin && isPending && (
+        {/* SUBADMIN + MASTER 승인/반려 */}
+        {canApproveOrReject && (
           <div className="mt-5 flex gap-2">
             <button
               onClick={rejectWithReason}
