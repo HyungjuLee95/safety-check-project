@@ -2,6 +2,13 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# 한글 폰트 설치 (ReportLab 한글 깨짐 방지)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    fonts-nanum \
+    fonts-noto-cjk \
+    fontconfig \
+ && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 

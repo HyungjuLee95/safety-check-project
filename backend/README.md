@@ -333,4 +333,113 @@ gcloud run services logs read safety-frontend --region asia-northeast3 --limit 1
 3. 비밀정보는 Secret Manager로 관리
 
 이 항목을 먼저 정리한 뒤 운영 배포를 진행하세요.
------------------------------------------------------
+
+
+## 10) 최근 UI/권한 변경 사항 (모바일/운영 편의)
+
+- 서브관리자 권한 관리 화면
+  - 기본은 목록 중심으로 표시하고, `서브관리자 등록` 버튼 클릭 시에만 등록 폼이 펼쳐집니다.
+  - 등록 폼 하단 버튼은 `등록` / `취소` 2분할이며, `취소` 시 폼이 닫히고 입력값이 초기화됩니다.
+- 대시보드 상단 통계 카드 통일
+  - 마스터/서브/워커 모두 `Today Report | Today | Pending` 3칸 구조를 사용합니다.
+- 마스터 관리자 홈 메뉴 순서 변경
+  1. 기록 조회 및 엑셀
+  2. 점검 업무 등록
+  3. 작업 장소 관리
+  4. 체크리스트 관리
+  5. 서브관리자 권한 관리
+- 점검 업무 등록(카테고리) 관리 기능 추가
+  - 작업 카테고리 목록을 조회/추가/삭제할 수 있습니다.
+  - 백엔드 `settings/work_types` 문서에 저장됩니다.
+- 승인 권한 확장
+  - 기존: 서브관리자(카테고리 제한)만 승인/반려
+  - 변경: 마스터 관리자는 모든 `PENDING` 문서에 대해 승인/반려 가능
+
+### 관련 파일
+
+- `frontend/src/pages/admin/AdminSubadminManager.jsx`
+- `frontend/src/pages/admin/AdminHomeView.jsx`
+- `frontend/src/pages/subadmin/SubAdminHomeView.jsx`
+- `frontend/src/pages/HomeView.jsx`
+- `frontend/src/pages/admin/AdminWorkTypeManager.jsx`
+- `frontend/src/pages/admin/AdminRecordDetailView.jsx`
+- `frontend/src/App.jsx`
+- `frontend/src/services/api.js`
+- `backend/app/routers/settings.py`
+- `backend/app/services/settings_service.py`
+
+## 11) 엑셀/PDF 출력용 데이터 필드 맵
+
+아래는 현재 코드에서 실제로 사용 중인 점검 데이터 필드 정리입니다.
+형식은 `변수명 : 의미` 기준이며, 엑셀 출력/향후 PDF 출력 설계 시 그대로 매핑해서 사용하면 됩니다.
+
+### 11-1. 점검 제출(입력) 필드
+
+- `userName` : 점검자 이름
+- `date` : 작성일/점검일 (`YYYY-MM-DD`)
+- `hospital` : 병원명(작업 장소)
+- `equipmentName` : 장비명(없을 수 있음)
+- `workType` : 작업 종류(카테고리)
+- `checklistVersion` : 체크리스트 버전
+- `answers` : 체크리스트 응답 배열
+- `signatureBase64` : 점검자 서명 이미지(base64)
+
+`answers[]` 내부 항목
+
+- `itemId` : 체크리스트 항목 ID
+- `question` : 질문 문구
+- `value` : 점검 결과(예: `양호`, `보통`, `점검필요`)
+- `comment` : 개선점/점검필요 사유
+
+### 11-2. 저장 시 생성/유지되는 필드
+
+- `id` : 점검 문서 ID
+- `status` : 상태(`PENDING`/`SUBMITTED`/`REJECTED`/`CANCELLED`)
+- `createdAt`, `updatedAt` : 생성/수정 시각
+- `revisions`, `latestRevision` : 제출/수정 이력
+- `results` : 최신 체크리스트 응답 배열(엑셀 출력 시 사용)
+- `resultCount` : 양호 개수/전체 개수(예: `18/22`)
+- `improveCount` : 점검필요 개수
+- `approvedBy`, `approvedAt` : 승인자/승인시각
+- `subadminSignatureBase64` : 검수자(승인자) 서명 이미지
+- `rejectedBy`, `rejectedAt`, `rejectReason` : 반려 처리 정보
+
+### 11-3. 엑셀 생성 시 참조되는 필드
+
+- 상단 메타
+  - `date` : 작성일
+  - `userName` 또는 `name` : 점검자
+  - `hospital` : 병원명
+  - `workType` : 작업종류
+  - `equipmentName` : 장비
+  - `subadminName` : 검수자 이름
+- 서명
+  - `subadminSignatureBase64` : 검수자 서명
+  - `signatureBase64` : 점검자 서명
+- 본문 체크리스트
+  - `results[].question` : 질문
+  - `results[].value` : 결과
+  - `results[].comment` : 개선점/사유
+
+### 11-4. 요청하신 PDF 서식 기준 권장 매핑
+
+- `작성일` : `date`
+- `점검자` : `userName` (fallback: `name`)
+- `병원명` : `hospital`
+- `작업종류 및 기기` : `workType` + `equipmentName`
+- `x/y/z 체크 항목` : `results[]`에서 질문/결과를 해당 서식 항목으로 매핑
+- `개선점` : `results[].comment`(특히 `value = 점검필요`인 항목 중심)
+- `검수자 서명` : `subadminSignatureBase64`
+- `점검자 서명` : `signatureBase64`
+
+### 11-5. 출력용(PDF) 다음 단계 제안
+
+1. **출력 전용 DTO 확정**
+   - 상단 정보(작성일/점검자/병원/작업종류/장비/검수자)
+   - 체크 항목(질문/결과/개선점)
+   - 서명(검수자/점검자)
+2. **레이아웃 결정**
+   - 고정 문구(x/y/z) + 동적 리스트 혼합 여부 결정
+3. **출력 경로 결정**
+   - A안: 현재 엑셀 템플릿 기반 유지 후 PDF 변환
+   - B안: HTML 템플릿 렌더 후 PDF 생성
