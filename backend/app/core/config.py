@@ -12,4 +12,7 @@ CORS_ORIGINS = [
     "https://210.123.0.166",
     "http://210.123.0.166:5173",
     "https://210.123.0.166:5173",
+    "https://safety-frontend-ryzxipd66a-du.a.run.app",
+    "https://safety-frontend-409085920181.asia-northeast3.run.app",
+
 ]
