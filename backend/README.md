@@ -333,3 +333,4 @@ gcloud run services logs read safety-frontend --region asia-northeast3 --limit 1
 3. 비밀정보는 Secret Manager로 관리
 
 이 항목을 먼저 정리한 뒤 운영 배포를 진행하세요.
+-----------------------------------------------------
