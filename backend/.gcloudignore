@@ -1,0 +1,19 @@
+# ignore everything
+**
+
+# allow only required files/folders
+!Dockerfile
+!requirements.txt
+!app/**
+!templates/**
+!scripts/**
+!README.md
+
+# never upload
+venv/
+**/venv/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.zip
+**/*.xlsx
