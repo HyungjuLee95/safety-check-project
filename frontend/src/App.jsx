@@ -20,6 +20,7 @@ import AdminRecordsView from './pages/admin/AdminRecordsView';
 import AdminChecklistManager from './pages/admin/AdminChecklistManager';
 import AdminLocationManager from './pages/admin/AdminLocationManager';
 import AdminSubadminManager from './pages/admin/AdminSubadminManager';
+import AdminWorkTypeManager from './pages/admin/AdminWorkTypeManager';
 import AdminRecordDetailView from './pages/admin/AdminRecordDetailView';
 
 // ✅ SUBADMIN
@@ -47,7 +48,7 @@ const App = () => {
   const [editContext, setEditContext] = useState(null);
 
   // 작업 종류
-  const workTypes = ['X-ray 설치작업', 'MR 설치작업', 'CT 작업', '정기 유지보수'];
+  const [workTypes, setWorkTypes] = useState(['X-ray 설치작업', 'MR 설치작업', 'CT 작업', '정기 유지보수']);
 
   // 점검 진행 상태
   const [setupData, setSetupData] = useState({
@@ -60,12 +61,16 @@ const App = () => {
   // 임시: inspect->signature로 넘길 results 보관
   const [tempResults, setTempResults] = useState(null);
 
-  // 1) 초기 병원 목록 로딩
+  // 1) 초기 설정 데이터 로딩
   useEffect(() => {
     const init = async () => {
       try {
-        const data = await safetyApi.getHospitals();
-        setHospitals(data.hospitals || []);
+        const [hospitalData, workTypeData] = await Promise.all([
+          safetyApi.getHospitals(),
+          safetyApi.getWorkTypes(),
+        ]);
+        setHospitals(hospitalData.hospitals || []);
+        setWorkTypes(workTypeData.workTypes || []);
       } catch (e) {
         console.error(e);
       }
@@ -113,6 +118,21 @@ const App = () => {
   };
 
   useEffect(() => {
+    if (!user?.isWorker || view !== 'home') return;
+
+    const loadWorkerStats = async () => {
+      try {
+        const data = await safetyApi.getMyInspections({ userName: user.name });
+        setMyRecords(data || []);
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    loadWorkerStats();
+  }, [user, view]);
+
+  useEffect(() => {
     const isAdminLike = Boolean(user?.isMasterAdmin || user?.isSubAdmin);
 
     if (!isAdminLike) return;
@@ -143,7 +163,11 @@ const App = () => {
 
       if (loggedInUser?.isMasterAdmin) setView('admin_home');
       else if (loggedInUser?.isSubAdmin) setView('subadmin_home');
-      else setView('home');
+      else {
+        const myData = await safetyApi.getMyInspections({ userName: loggedInUser.name });
+        setMyRecords(myData || []);
+        setView('home');
+      }
     } catch (e) {
       console.error(e);
       const msg = e?.response?.data?.detail;
@@ -289,16 +313,13 @@ const handleApprove = async ({ inspectionId, subadminName, signatureBase64 }) =>
 
   setIsLoading(true);
   try {
-    await safetyApi.approveInspection(inspectionId, { subadminName, signatureBase64, subadminCategories: user?.categories || [] });
+    await safetyApi.approveInspection(inspectionId, { subadminName, signatureBase64, subadminCategories: user?.isMasterAdmin ? [] : (user?.categories || []) });
     alert('승인 처리되었습니다.');
 
-    // 목록 갱신
+    // 처리 완료 후 목록 재조회 + 상세 화면 이탈(중복 처리 방지)
     await fetchAdminLikeRecords();
-
-    // ⚠️ records는 setState라 즉시 최신이 아닐 수 있음
-    // (우선은 기존 로직 유지해도 되고, 다음 단계에서 "fetch 함수가 data return" 하게 개선하면 더 안정적)
-    const updated = (records || []).find((r) => r.id === inspectionId);
-    if (updated) setSelectedRecord(updated);
+    setSelectedRecord(null);
+    setView('subadmin_records');
   } catch (e) {
     console.error(e);
     const msg = e?.response?.data?.detail;
@@ -316,13 +337,13 @@ const handleReject = async ({ inspectionId, subadminName, reason }) => {
 
   setIsLoading(true);
   try {
-    await safetyApi.rejectInspection(inspectionId, { subadminName, reason, subadminCategories: user?.categories || [] });
+    await safetyApi.rejectInspection(inspectionId, { subadminName, reason, subadminCategories: user?.isMasterAdmin ? [] : (user?.categories || []) });
     alert('반려 처리되었습니다.');
 
+    // 처리 완료 후 목록 재조회 + 상세 화면 이탈(중복 처리 방지)
     await fetchAdminLikeRecords();
-
-    const updated = (records || []).find((r) => r.id === inspectionId);
-    if (updated) setSelectedRecord(updated);
+    setSelectedRecord(null);
+    setView('subadmin_records');
   } catch (e) {
     console.error(e);
     const msg = e?.response?.data?.detail;
@@ -343,6 +364,11 @@ const handleReject = async ({ inspectionId, subadminName, reason }) => {
       {view === 'home' && (
         <HomeView
           user={user}
+          stats={{
+            total: myRecords.length,
+            today: myRecords.filter((r) => r.date === new Date().toISOString().split('T')[0]).length,
+            pending: myRecords.filter((r) => String(r.status || '').toUpperCase() === 'PENDING').length,
+          }}
           onStart={() => {
             setEditContext(null);
             setTempResults(null);
@@ -435,6 +461,17 @@ const handleReject = async ({ inspectionId, subadminName, reason }) => {
         />
       )}
 
+
+      {/* 관리자 점검 업무 */}
+      {view === 'admin_work_types' && (
+        <AdminWorkTypeManager
+          user={user}
+          workTypes={workTypes}
+          setWorkTypes={setWorkTypes}
+          onBack={() => setView('admin_home')}
+        />
+      )}
+
       {/* 관리자 체크리스트 */}
       {view === 'admin_checklist' && (
         <AdminChecklistManager user={user} categories={workTypes} onBack={() => setView('admin_home')} />
@@ -477,6 +514,8 @@ const handleReject = async ({ inspectionId, subadminName, reason }) => {
           user={user}
           record={selectedRecord}
           onBack={() => setView('admin_records')}
+          onApprove={handleApprove}
+          onReject={handleReject}
         />
       )}
 
