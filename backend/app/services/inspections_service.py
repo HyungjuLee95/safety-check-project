@@ -80,6 +80,67 @@ def _all_records() -> List[Dict[str, Any]]:
     return out
 
 
+def _get_record_by_id(inspection_id: str) -> Optional[Dict[str, Any]]:
+    client = get_firestore_client()
+    doc = client.collection("inspections").document(str(inspection_id)).get()
+    if not doc.exists:
+        return None
+    data = doc.to_dict() or {}
+    data["id"] = doc.id
+    return data
+
+
+def _get_records_by_ids(inspection_ids: List[str]) -> List[Dict[str, Any]]:
+    """Firestore에서 id 목록으로 레코드를 가져온다(존재하는 것만 반환)."""
+    ids = [str(i).strip() for i in (inspection_ids or []) if str(i).strip()]
+    if not ids:
+        return []
+
+    # 중복 제거(순서는 유지)
+    seen = set()
+    uniq_ids: List[str] = []
+    for i in ids:
+        if i in seen:
+            continue
+        seen.add(i)
+        uniq_ids.append(i)
+
+    client = get_firestore_client()
+    refs = [client.collection("inspections").document(i) for i in uniq_ids]
+    docs = client.get_all(refs)
+    out: List[Dict[str, Any]] = []
+    for doc in docs:
+        if not getattr(doc, "exists", False):
+            continue
+        data = doc.to_dict() or {}
+        data["id"] = doc.id
+        out.append(data)
+    return out
+
+
+def _to_admin_view(r: Dict[str, Any]) -> Dict[str, Any]:
+    latest = r.get("latestRevision") or {}
+    return {
+        "id": r.get("id"),
+        "name": r.get("name"),
+        "userName": r.get("userName"),
+        "date": r.get("date"),
+        "hospital": r.get("hospital"),
+        "equipmentName": r.get("equipmentName"),
+        "workType": r.get("workType"),
+        "status": r.get("status"),
+        "resultCount": latest.get("resultCount"),
+        "improveCount": latest.get("improveCount"),
+        "rejectReason": r.get("rejectReason") or "",
+        "results": latest.get("answers") or [],
+        "signatureBase64": latest.get("signatureBase64"),
+        "subadminName": r.get("approvedBy"),
+        "subadminSignatureBase64": r.get("subadminSignatureBase64"),
+        "createdAt": r.get("createdAt"),
+        "updatedAt": r.get("updatedAt"),
+    }
+
+
 def _save_record(record: Dict[str, Any]) -> Dict[str, Any]:
     client = get_firestore_client()
     rec_id = str(record.get("id") or f"rec-{uuid.uuid4().hex[:10]}")
@@ -130,29 +191,44 @@ def list_admin_inspections(start_date: str, end_date: str, requester_role: Optio
     data.sort(key=lambda r: (r.get("date") or "", r.get("updatedAt") or ""), reverse=True)
     out: List[Dict[str, Any]] = []
     for r in data:
-        latest = r.get("latestRevision") or {}
-        out.append(
-            {
-                "id": r.get("id"),
-                "name": r.get("name"),
-                "userName": r.get("userName"),
-                "date": r.get("date"),
-                "hospital": r.get("hospital"),
-                "equipmentName": r.get("equipmentName"),
-                "workType": r.get("workType"),
-                "status": r.get("status"),
-                "resultCount": latest.get("resultCount"),
-                "improveCount": latest.get("improveCount"),
-                "rejectReason": r.get("rejectReason") or "",
-                "results": latest.get("answers") or [],
-                "signatureBase64": latest.get("signatureBase64"),
-                "subadminName": r.get("approvedBy"),
-                "subadminSignatureBase64": r.get("subadminSignatureBase64"),
-                "createdAt": r.get("createdAt"),
-                "updatedAt": r.get("updatedAt"),
-            }
-        )
+        out.append(_to_admin_view(r))
     return out
+
+
+def get_admin_inspection_by_id(
+    inspection_id: str,
+    requester_role: Optional[str] = None,
+    requester_categories: Optional[List[str]] = None,
+) -> Optional[Dict[str, Any]]:
+    """관리자 화면에 필요한 형태로 단건을 가져온다."""
+    r = _get_record_by_id(inspection_id)
+    if not r:
+        return None
+
+    role = str(requester_role or "").strip().upper()
+    category_set = {str(c).strip() for c in (requester_categories or []) if str(c).strip()}
+    if role == "SUB_ADMIN" and category_set:
+        if str(r.get("workType") or "") not in category_set:
+            return None
+
+    return _to_admin_view(r)
+
+
+def list_admin_inspections_by_ids(
+    inspection_ids: List[str],
+    requester_role: Optional[str] = None,
+    requester_categories: Optional[List[str]] = None,
+) -> List[Dict[str, Any]]:
+    """관리자 화면에 필요한 형태로 여러 건을 id 목록으로 가져온다."""
+    records = _get_records_by_ids(inspection_ids)
+
+    role = str(requester_role or "").strip().upper()
+    category_set = {str(c).strip() for c in (requester_categories or []) if str(c).strip()}
+    if role == "SUB_ADMIN" and category_set:
+        records = [r for r in records if str(r.get("workType") or "") in category_set]
+
+    records.sort(key=lambda r: (r.get("date") or "", r.get("updatedAt") or ""), reverse=True)
+    return [_to_admin_view(r) for r in records]
 
 
 def can_subadmin_handle_inspection(inspection_id: str, categories: Optional[List[str]]) -> bool:

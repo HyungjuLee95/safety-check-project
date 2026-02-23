@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Download } from 'lucide-react';
+import { safetyApi } from '../../services/api';
 
 // YES/NO 레거시 대응
 function normalizeToUiValue(value) {
@@ -24,6 +25,19 @@ function signatureSrc(signatureBase64) {
   return `data:image/png;base64,${s}`;
 }
 
+function normalizeStatus(status) {
+  return String(status || '').trim().toUpperCase();
+}
+
+function displayStatus(status) {
+  const s = normalizeStatus(status);
+  if (s === 'SUBMITTED') return '승인 완료';
+  if (s === 'PENDING') return '승인 대기';
+  if (s === 'REJECTED') return '반려';
+  if (s === 'CANCELLED') return '취소';
+  return String(status || '');
+}
+
 const AdminRecordDetailView = ({ user, record, onBack, onApprove, onReject }) => {
   const workerSig = signatureSrc(record?.signatureBase64);
   const subSig = signatureSrc(record?.subadminSignatureBase64); // 백엔드가 이 필드를 내려줘야 실제 표시됨
@@ -31,8 +45,40 @@ const AdminRecordDetailView = ({ user, record, onBack, onApprove, onReject }) =>
   const normalizedRole = String(user?.role || '').trim().toUpperCase();
   const isSubadmin = normalizedRole === 'SUBADMIN' || normalizedRole === 'SUB_ADMIN';
   const isMasterAdmin = normalizedRole === 'MASTER_ADMIN';
-  const isPending = String(record?.status || '').toUpperCase() === 'PENDING';
+
+  const statusUpper = normalizeStatus(record?.status);
+  const isPending = statusUpper === 'PENDING';
+  const isApproved = statusUpper === 'SUBMITTED';
+
   const canApproveOrReject = isPending && (isSubadmin || isMasterAdmin);
+
+  // ✅ 단건 PDF 다운로드 상태
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+
+  const handleDownloadSinglePdf = async () => {
+    const inspectionId = record?.id;
+    if (!inspectionId) {
+      alert('점검 ID를 찾을 수 없습니다.');
+      return;
+    }
+    if (!isApproved) {
+      alert('승인 완료 건만 PDF 다운로드가 가능합니다.');
+      return;
+    }
+
+    try {
+      setDownloadingPdf(true);
+      await safetyApi.exportSingleInspectionPdf(inspectionId, {
+        admin_name: user?.name,
+        requester_role: user?.role,
+        requester_categories: (user?.categories || []).join(','),
+      });
+    } catch (e) {
+      alert('PDF 다운로드 실패');
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
 
   // --- 서명 모달(승인용) ---
   const [openSign, setOpenSign] = useState(false);
@@ -161,8 +207,33 @@ const AdminRecordDetailView = ({ user, record, onBack, onApprove, onReject }) =>
           {' · '}
           {record?.workType}
         </p>
+
         {record?.status && (
-          <p className="text-[11px] font-bold text-slate-400 mt-3">상태: {record.status}</p>
+          <p className="text-[11px] font-bold text-slate-400 mt-3">
+            상태: {displayStatus(record.status)}
+          </p>
+        )}
+
+        {/* ✅ MASTER_ADMIN 전용: 단건 PDF 다운로드 (승인 완료만) */}
+        {isMasterAdmin && (
+          <div className="mt-4">
+            <button
+              onClick={handleDownloadSinglePdf}
+              disabled={!isApproved || downloadingPdf}
+              className={`w-full py-3 rounded-xl font-black text-xs shadow-md flex items-center justify-center gap-2 transition-all ${
+                !isApproved || downloadingPdf
+                  ? 'bg-slate-700 text-slate-300'
+                  : 'bg-white text-slate-900 active:scale-95'
+              }`}
+              title={!isApproved ? '승인 완료 건만 다운로드 가능합니다.' : ''}
+            >
+              <Download size={16} />
+              {downloadingPdf ? '다운로드 중...' : '단건 PDF 다운로드'}
+            </button>
+            <p className="mt-2 text-[10px] text-slate-400 font-bold">
+              * 승인 완료 건(SUBMITTED)만 다운로드됩니다.
+            </p>
+          </div>
         )}
 
         {/* SUBADMIN + MASTER 승인/반려 */}

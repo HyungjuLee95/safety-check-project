@@ -24,7 +24,7 @@ const api = axios.create({
 const downloadNameCounter = new Map();
 
 function makeIncrementedFileName(fileName) {
-  const safeName = fileName || 'safety_report.xlsx';
+  const safeName = fileName || 'safety_report.pdf';
   const dot = safeName.lastIndexOf('.');
   const base = dot > 0 ? safeName.slice(0, dot) : safeName;
   const ext = dot > 0 ? safeName.slice(dot) : '';
@@ -34,6 +34,51 @@ function makeIncrementedFileName(fileName) {
 
   if (current === 0) return safeName;
   return `${base}_${current}${ext}`;
+}
+
+function extractFileNameFromDisposition(disposition, fallbackName) {
+  const fallback = fallbackName || `download_${Date.now()}.pdf`;
+  const cd = String(disposition || '');
+
+  // 1) RFC 5987: filename*=UTF-8''...
+  // 예) attachment; filename="x.pdf"; filename*=UTF-8''x.pdf
+  const starMatch = cd.match(/filename\*\s*=\s*([^;]+)/i);
+  if (starMatch && starMatch[1]) {
+    const raw = starMatch[1].trim().replace(/^"|"$/g, ''); // 따옴표 제거
+    // UTF-8''<urlencoded>
+    const parts = raw.split("''");
+    if (parts.length === 2) {
+      const encoded = parts[1];
+      try {
+        return decodeURIComponent(encoded);
+      } catch {
+        return encoded;
+      }
+    }
+    // 혹시 '' 포맷이 아니어도 값만 쓰기
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  }
+
+  // 2) filename="..."
+  const match = cd.match(/filename\s*=\s*"?([^";]+)"?/i);
+  if (match && match[1]) return match[1];
+
+  return fallback;
+}
+
+function triggerBlobDownload(blob, fileName) {
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', makeIncrementedFileName(fileName));
+  document.body.appendChild(link);
+  link.click();
+  link.parentNode.removeChild(link);
+  window.URL.revokeObjectURL(url);
 }
 
 /**
@@ -180,7 +225,7 @@ export const safetyApi = {
     }
   },
 
-  // 점검 기록 PDF 다운로드
+  // ✅ (기존) 점검 기록 PDF 일괄 다운로드(기간)
   exportInspections: async (params) => {
     try {
       const response = await api.get('/inspections/export-pdf', {
@@ -188,22 +233,74 @@ export const safetyApi = {
         responseType: 'blob',
       });
 
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-
       const disposition = response.headers?.['content-disposition'] || '';
-      const match = disposition.match(/filename="?([^";]+)"?/i);
-      const serverFileName = match?.[1] || `safety_report_${new Date().getTime()}.pdf`;
-      link.setAttribute('download', makeIncrementedFileName(serverFileName));
+      const serverFileName = extractFileNameFromDisposition(
+        disposition,
+        `safety_report_${new Date().getTime()}.pdf`
+      );
 
-      document.body.appendChild(link);
-      link.click();
-
-      link.parentNode.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      triggerBlobDownload(new Blob([response.data], { type: 'application/pdf' }), serverFileName);
     } catch (error) {
       console.error('PDF 다운로드 실패:', error);
+      throw error;
+    }
+  },
+
+  // ✅ (신규) 단건 PDF 다운로드 (MASTER_ADMIN 상세에서 사용)
+  // backend: GET /api/v1/inspections/{inspection_id}/export-pdf?admin_name=...&requester_role=...&requester_categories=...
+  exportSingleInspectionPdf: async (inspectionId, params) => {
+    try {
+      if (!inspectionId) throw new Error('inspectionId is required');
+
+      const response = await api.get(`/inspections/${encodeURIComponent(inspectionId)}/export-pdf`, {
+        params,
+        responseType: 'blob',
+      });
+
+      const disposition = response.headers?.['content-disposition'] || '';
+      const serverFileName = extractFileNameFromDisposition(
+        disposition,
+        `inspection_${inspectionId}_${new Date().getTime()}.pdf`
+      );
+
+      triggerBlobDownload(new Blob([response.data], { type: 'application/pdf' }), serverFileName);
+    } catch (error) {
+      console.error('단건 PDF 다운로드 실패:', error);
+      throw error;
+    }
+  },
+
+  // ✅ (신규) 선택 다건 PDF 다운로드 (MASTER_ADMIN 리스트에서 체크된 항목만)
+  // backend: POST /api/v1/inspections/export-pdf-selected?admin_name=...
+  // body: { inspectionIds: [...], requester_role, requester_categories }
+  exportSelectedInspectionsPdf: async (inspectionIds, params) => {
+    try {
+      const ids = Array.isArray(inspectionIds) ? inspectionIds.filter(Boolean) : [];
+      if (ids.length === 0) throw new Error('inspectionIds is required');
+
+      const adminName = params?.admin_name || params?.adminName;
+      if (!adminName) throw new Error('admin_name is required');
+
+      const body = {
+        inspectionIds: ids,
+        requester_role: params?.requester_role || params?.requesterRole,
+        requester_categories: params?.requester_categories || params?.requesterCategories,
+      };
+
+      const response = await api.post('/inspections/export-pdf-selected', body, {
+        params: { admin_name: adminName },
+        responseType: 'blob',
+      });
+
+      const disposition = response.headers?.['content-disposition'] || '';
+      const serverFileName = extractFileNameFromDisposition(
+        disposition,
+        `safety_reports_selected_${new Date().getTime()}.pdf`
+      );
+
+      triggerBlobDownload(new Blob([response.data], { type: 'application/pdf' }), serverFileName);
+    } catch (error) {
+      console.error('선택 PDF 다운로드 실패:', error);
       throw error;
     }
   },

@@ -3,7 +3,9 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Any, Dict, List, Optional
 import io
+import datetime
 from pathlib import Path
+from urllib.parse import quote
 
 from app.schemas.inspection import InspectionSubmission
 from app.services.excel_export_service import build_export_filename, build_inspections_excel_bytes
@@ -19,8 +21,58 @@ from app.services.inspections_service import (
     approve_inspection,
     reject_inspection,
 )
+from app.storage.firestore_client import get_firestore_client
 
 router = APIRouter(tags=["inspections"])
+
+
+def _content_disposition(filename: str) -> str:
+    """
+    모바일/브라우저 호환을 위해 filename* 포함 (UTF-8)
+    """
+    safe = filename.replace('"', "")
+    return f'attachment; filename="{safe}"; filename*=UTF-8\'\'{quote(safe)}'
+
+
+def _parse_categories(categories_str: Optional[str]) -> List[str]:
+    return [c.strip() for c in str(categories_str or "").split(",") if c.strip()]
+
+
+def _fetch_inspection_export_shape(inspection_id: str) -> Dict[str, Any]:
+    """
+    Firestore 원본 레코드를 가져와서 pdf_export_service가 기대하는 shape로 변환.
+    (list_admin_inspections()가 만드는 shape와 최대한 동일)
+    """
+    client = get_firestore_client()
+    snap = client.collection("inspections").document(inspection_id).get()
+    if not snap.exists:
+        raise HTTPException(status_code=404, detail="inspection not found")
+
+    r = snap.to_dict() or {}
+    r["id"] = snap.id
+
+    latest = r.get("latestRevision") or {}
+    answers = latest.get("answers") or r.get("results") or []
+
+    return {
+        "id": r.get("id"),
+        "name": r.get("name"),
+        "userName": r.get("userName"),
+        "date": r.get("date"),
+        "hospital": r.get("hospital"),
+        "equipmentName": r.get("equipmentName"),
+        "workType": r.get("workType"),
+        "status": r.get("status"),
+        "resultCount": latest.get("resultCount") or r.get("resultCount"),
+        "improveCount": latest.get("improveCount") or r.get("improveCount"),
+        "rejectReason": r.get("rejectReason") or "",
+        "results": answers,
+        "signatureBase64": latest.get("signatureBase64") or r.get("signatureBase64"),
+        "subadminName": r.get("approvedBy"),
+        "subadminSignatureBase64": r.get("subadminSignatureBase64"),
+        "createdAt": r.get("createdAt"),
+        "updatedAt": r.get("updatedAt"),
+    }
 
 
 @router.post("/inspections")
@@ -37,7 +89,7 @@ def admin_list_inspections(
     requester_role: Optional[str] = None,
     requester_categories: Optional[str] = None,
 ):
-    categories = [c.strip() for c in str(requester_categories or "").split(",") if c.strip()]
+    categories = _parse_categories(requester_categories)
     return list_admin_inspections(
         start_date,
         end_date,
@@ -54,7 +106,7 @@ def export_inspections(
     requester_role: Optional[str] = None,
     requester_categories: Optional[str] = None,
 ):
-    categories = [c.strip() for c in str(requester_categories or "").split(",") if c.strip()]
+    categories = _parse_categories(requester_categories)
     data = list_admin_inspections(
         start_date,
         end_date,
@@ -79,10 +131,8 @@ def export_inspections(
     return StreamingResponse(
         stream,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={"Content-Disposition": _content_disposition(filename)},
     )
-
-
 
 
 @router.get("/inspections/export-pdf")
@@ -93,7 +143,7 @@ def export_inspections_pdf(
     requester_role: Optional[str] = None,
     requester_categories: Optional[str] = None,
 ):
-    categories = [c.strip() for c in str(requester_categories or "").split(",") if c.strip()]
+    categories = _parse_categories(requester_categories)
     data = list_admin_inspections(
         start_date,
         end_date,
@@ -113,8 +163,102 @@ def export_inspections_pdf(
     return StreamingResponse(
         stream,
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={"Content-Disposition": _content_disposition(filename)},
     )
+
+
+# -----------------------------
+# NEW: 단건 PDF 다운로드
+# -----------------------------
+@router.get("/inspections/{inspection_id}/export-pdf")
+def export_single_inspection_pdf(
+    inspection_id: str,
+    admin_name: str,
+    requester_role: Optional[str] = None,
+    requester_categories: Optional[str] = None,
+):
+    """
+    MASTER_ADMIN 상세 화면에서 단건 PDF 다운로드 용도.
+    SUB_ADMIN일 경우 카테고리 제한을 동일하게 적용(카테고리 밖이면 403).
+    """
+    categories = _parse_categories(requester_categories)
+
+    role = str(requester_role or "").strip().upper()
+    if role == "SUB_ADMIN" and categories:
+        # 서브어드민 카테고리 권한 체크
+        if not can_subadmin_handle_inspection(inspection_id, categories):
+            raise HTTPException(status_code=403, detail="subadmin cannot access this category")
+
+    record = _fetch_inspection_export_shape(inspection_id)
+
+    try:
+        pdf_bytes = build_inspections_pdf_bytes([record])
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"pdf export failed: {exc}")
+
+    stream = io.BytesIO(pdf_bytes)
+    stream.seek(0)
+
+    # 파일명은 안전하게 id 기반(한글/특수문자 이슈 최소화)
+    filename = f"inspection_{inspection_id}.pdf"
+    return StreamingResponse(
+        stream,
+        media_type="application/pdf",
+        headers={"Content-Disposition": _content_disposition(filename)},
+    )
+
+
+class ExportSelectedPdfRequest(BaseModel):
+    inspectionIds: List[str]
+    requester_role: Optional[str] = None
+    requester_categories: Optional[str] = None
+
+
+# -----------------------------
+# NEW: 선택 다건 PDF 다운로드 (체크박스 선택)
+# -----------------------------
+@router.post("/inspections/export-pdf-selected")
+def export_selected_inspections_pdf(
+    body: ExportSelectedPdfRequest,
+    admin_name: str,
+):
+    """
+    MASTER_ADMIN 리스트 화면에서 체크된 항목들만 PDF로 묶어 다운로드.
+    - inspectionIds: ["rec-xxxx", ...]
+    - pdf_export_service 내부에서 SUBMITTED만 출력하도록 되어있으면 자동으로 승인건만 담김.
+    """
+    ids = [str(i).strip() for i in (body.inspectionIds or []) if str(i).strip()]
+    if not ids:
+        raise HTTPException(status_code=400, detail="inspectionIds is required")
+
+    categories = _parse_categories(body.requester_categories)
+    role = str(body.requester_role or "").strip().upper()
+
+    records: List[Dict[str, Any]] = []
+    for inspection_id in ids:
+        if role == "SUB_ADMIN" and categories:
+            if not can_subadmin_handle_inspection(inspection_id, categories):
+                raise HTTPException(status_code=403, detail="subadmin cannot access this category")
+        records.append(_fetch_inspection_export_shape(inspection_id))
+
+    # 선택 다운로드 파일명
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"safety_reports_selected_{ts}.pdf"
+
+    try:
+        pdf_bytes = build_inspections_pdf_bytes(records)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"pdf export failed: {exc}")
+
+    stream = io.BytesIO(pdf_bytes)
+    stream.seek(0)
+
+    return StreamingResponse(
+        stream,
+        media_type="application/pdf",
+        headers={"Content-Disposition": _content_disposition(filename)},
+    )
+
 
 @router.get("/me/inspections")
 def me_list_inspections(userName: str, start_date: Optional[str] = None, end_date: Optional[str] = None):
