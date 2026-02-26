@@ -8,17 +8,64 @@ const SignatureView = ({ onFinish, onBack }) => {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    ctx.lineWidth = 3;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.strokeStyle = '#0f172a';
+
+    const setupContext = () => {
+      const ctx = canvas.getContext('2d');
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = '#0f172a';
+    };
+
+    const resizeCanvasToDisplaySize = () => {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+
+      const width = Math.round(rect.width * dpr);
+      const height = Math.round(rect.height * dpr);
+
+      if (canvas.width !== width || canvas.height !== height) {
+        const prev = canvas.toDataURL('image/png');
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        setupContext();
+
+        if (prev) {
+          const img = new Image();
+          img.onload = () => ctx.drawImage(img, 0, 0, rect.width, rect.height);
+          img.src = prev;
+        }
+      } else {
+        const ctx = canvas.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        setupContext();
+      }
+    };
+
+    resizeCanvasToDisplaySize();
+    window.addEventListener('resize', resizeCanvasToDisplaySize);
+    return () => window.removeEventListener('resize', resizeCanvasToDisplaySize);
   }, []);
 
+  const getCanvasPoint = (e) => {
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+
+    const clientX = e.clientX ?? e.touches?.[0]?.clientX ?? e.changedTouches?.[0]?.clientX;
+    const clientY = e.clientY ?? e.touches?.[0]?.clientY ?? e.changedTouches?.[0]?.clientY;
+
+    return {
+      x: clientX - rect.left,
+      y: clientY - rect.top,
+    };
+  };
+
   const startDrawing = (e) => {
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = (e.touches ? e.touches[0].clientX : e.nativeEvent.clientX) - rect.left;
-    const y = (e.touches ? e.touches[0].clientY : e.nativeEvent.clientY) - rect.top;
+    e.preventDefault();
+    const { x, y } = getCanvasPoint(e);
     const ctx = canvasRef.current.getContext('2d');
     ctx.beginPath();
     ctx.moveTo(x, y);
@@ -27,12 +74,20 @@ const SignatureView = ({ onFinish, onBack }) => {
 
   const draw = (e) => {
     if (!isDrawing) return;
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = (e.touches ? e.touches[0].clientX : e.nativeEvent.clientX) - rect.left;
-    const y = (e.touches ? e.touches[0].clientY : e.nativeEvent.clientY) - rect.top;
+    e.preventDefault();
+    const { x, y } = getCanvasPoint(e);
     const ctx = canvasRef.current.getContext('2d');
     ctx.lineTo(x, y);
     ctx.stroke();
+  };
+
+  const endDrawing = () => setIsDrawing(false);
+
+  const clearCanvas = () => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    ctx.clearRect(0, 0, rect.width, rect.height);
   };
 
   return (
@@ -46,21 +101,20 @@ const SignatureView = ({ onFinish, onBack }) => {
         <div className="relative bg-slate-50 rounded-[2.5rem] border-4 border-dashed border-slate-200 overflow-hidden flex-1 shadow-inner">
           <canvas
             ref={canvasRef}
-            width={400}
-            height={400}
             onMouseDown={startDrawing}
             onMouseMove={draw}
-            onMouseUp={() => setIsDrawing(false)}
+            onMouseUp={endDrawing}
+            onMouseLeave={endDrawing}
             onTouchStart={startDrawing}
             onTouchMove={draw}
-            onTouchEnd={() => setIsDrawing(false)}
+            onTouchEnd={endDrawing}
             className="w-full h-full cursor-crosshair touch-none"
           />
           <div className="absolute top-6 left-6 pointer-events-none">
             <p className="text-xs font-bold text-slate-300 uppercase tracking-widest">Sign Here</p>
           </div>
           <button
-            onClick={() => canvasRef.current.getContext('2d').clearRect(0, 0, 400, 400)}
+            onClick={clearCanvas}
             className="absolute top-4 right-4 bg-white p-3 rounded-full text-slate-400 shadow-md transition-all active:scale-90"
           >
             <RotateCcw size={18} />

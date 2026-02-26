@@ -1,106 +1,154 @@
-import React, { useState } from 'react';
-import { ArrowLeft, Search, Download, RotateCcw, ChevronRight } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { ArrowLeft, Search, Download, RotateCcw, ChevronRight, FileText, SlidersHorizontal } from 'lucide-react';
 import { safetyApi } from '../../services/api';
+
+const STATUS_TABS = [
+  { key: 'ALL', label: '전체' },
+  { key: 'PENDING', label: '승인대기' },
+  { key: 'SUBMITTED', label: '승인완료' },
+  { key: 'REJECTED', label: '반려' },
+];
+
+const normalizeStatus = (raw) => {
+  const s = String(raw || '').trim().toUpperCase();
+  if (!s) return '';
+  if (s === 'PENDING') return 'PENDING';
+  if (s === 'SUBMIT' || s === 'SUBMITTED' || s === 'APPROVED') return 'SUBMITTED';
+  if (s === 'REJECT' || s === 'REJECTED') return 'REJECTED';
+  if (s === 'CANCELLED') return 'CANCELLED';
+  return s;
+};
+
+const statusLabel = (raw) => {
+  const s = normalizeStatus(raw);
+  if (s === 'PENDING') return '승인 대기';
+  if (s === 'SUBMITTED') return '승인 완료';
+  if (s === 'REJECTED') return '반려';
+  if (s === 'CANCELLED') return '취소';
+  return '';
+};
+
+const isKakaoInApp = () => {
+  if (typeof window === 'undefined' || !window.navigator) return false;
+  return /KAKAOTALK/i.test(window.navigator.userAgent || '');
+};
 
 const AdminRecordsView = ({ user, records, onBack, onDetail }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
+  const [tab, setTab] = useState('ALL');
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
-  const handleExport = async () => {
+  const buildExportParams = () => ({
+    admin_name: user.name,
+    start_date: start || '2000-01-01',
+    end_date: end || '2099-12-31',
+    requester_role: user?.role,
+    requester_categories: (user?.categories || []).join(','),
+  });
+
+  const handleOpenPdf = () => {
+    if (isKakaoInApp()) {
+      alert('카카오 인앱브라우저에서는 파일 다운로드가 제한될 수 있어 PDF를 먼저 열어드립니다. 필요 시 우측 상단 메뉴에서 외부 브라우저로 여세요.');
+    }
+    safetyApi.openInspectionsPdf(buildExportParams());
+  };
+
+  const handleDownloadPdf = async () => {
     try {
-      await safetyApi.exportInspections({
-        admin_name: user.name,
-        start_date: start || '2000-01-01',
-        end_date: end || '2099-12-31'
-      });
+      await safetyApi.exportInspections(buildExportParams());
     } catch (err) {
-      alert("다운로드 실패");
+      alert('다운로드 실패');
     }
   };
 
-  const filtered = (records || []).filter(r => {
-    const keyword = searchTerm.trim();
-    const hit =
-      !keyword ||
-      (r.name || '').includes(keyword) ||
-      (r.hospital || '').includes(keyword) ||
-      (r.equipmentName || '').includes(keyword) ||
-      (r.workType || '').includes(keyword);
+  const filtered = useMemo(() => {
+    return (records || []).filter((r) => {
+      const keyword = searchTerm.trim();
+      const hit =
+        !keyword ||
+        (r.name || '').includes(keyword) ||
+        (r.hospital || '').includes(keyword) ||
+        (r.equipmentName || '').includes(keyword) ||
+        (r.workType || '').includes(keyword);
 
-    if (!hit) return false;
-    if (start && r.date < start) return false;
-    if (end && r.date > end) return false;
-    return true;
-  });
-
-  const normalizeStatus = (raw) => {
-    const s = String(raw || '').trim().toUpperCase();
-    if (!s) return '';
-    if (s === 'PENDING') return 'PENDING';
-    if (s === 'SUBMIT' || s === 'SUBMITTED') return 'SUBMITTED';
-    if (s === 'APPROVED') return 'SUBMITTED';
-    if (s === 'REJECT' || s === 'REJECTED') return 'REJECTED';
-    return s;
-  };
-
-  const statusLabel = (raw) => {
-    const s = normalizeStatus(raw);
-    if (s === 'PENDING') return '승인 대기';
-    if (s === 'SUBMITTED') return '승인 완료';
-    if (s === 'REJECTED') return '반려';
-    return ''; // 알 수 없는 값은 숨김
-  };
+      if (!hit) return false;
+      if (start && r.date < start) return false;
+      if (end && r.date > end) return false;
+      if (tab !== 'ALL' && normalizeStatus(r.status) !== tab) return false;
+      return true;
+    });
+  }, [records, searchTerm, start, end, tab]);
 
   const getImproveCount = (r) => {
-    // 여러 키 이름 대응
-    const direct =
-      r?.improveCount ??
-      r?.improve_count ??
-      r?.improveNeededCount ??
-      r?.improve_needed_count;
-
+    const direct = r?.improveCount ?? r?.improve_count ?? r?.improveNeededCount ?? r?.improve_needed_count;
     if (Number.isFinite(direct)) return direct;
-
-    // answers 기반 추론 (점검필요 존재 여부)
     const answers = Array.isArray(r?.answers) ? r.answers : [];
-    const hasNeed = answers.some(a => String(a?.value || '').trim() === '점검필요');
+    const hasNeed = answers.some((a) => String(a?.value || '').trim() === '점검필요');
     return hasNeed ? 1 : 0;
+  };
+
+  const tabButtonClass = (key) => {
+    const active = tab === key;
+    return `flex-1 py-2 rounded-xl font-black text-[11px] transition-all active:scale-95 ${
+      active ? 'bg-slate-900 text-white shadow' : 'bg-white text-slate-500 border border-slate-100'
+    }`;
   };
 
   return (
     <div className="flex flex-col h-full animate-in slide-in-from-right-8">
-      <div className="flex items-center mb-6">
+      <div className="flex items-center mb-5">
         <button onClick={onBack} className="p-2 -ml-2 text-slate-400"><ArrowLeft size={24} /></button>
         <h2 className="text-xl font-bold flex-1 text-center pr-8 tracking-tight">점검 기록</h2>
       </div>
 
-      <div className="space-y-4 mb-6">
+      <div className="space-y-3 mb-4">
+        <div className="flex gap-2">
+          {STATUS_TABS.map((item) => (
+            <button key={item.key} className={tabButtonClass(item.key)} onClick={() => setTab(item.key)}>{item.label}</button>
+          ))}
+        </div>
+
         <div className="relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
           <input
             type="text"
             placeholder="이름/장소/장비/작업구분 검색"
-            className="w-full pl-11 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold"
+            className="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold"
             value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
+            onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
 
-        <div className="flex gap-2 items-center bg-slate-50 p-2 rounded-2xl">
-          <input type="date" className="flex-1 p-2 bg-white rounded-xl text-[10px] font-bold" value={start} onChange={e => setStart(e.target.value)} />
-          <span className="text-slate-300">~</span>
-          <input type="date" className="flex-1 p-2 bg-white rounded-xl text-[10px] font-bold" value={end} onChange={e => setEnd(e.target.value)} />
-          <button onClick={() => { setStart(''); setEnd(''); }} className="p-2 text-blue-500 active:scale-90"><RotateCcw size={14} /></button>
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={handleOpenPdf} className="w-full bg-slate-900 text-white py-3.5 rounded-2xl font-bold text-sm shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-all">
+            <FileText size={16} /> PDF 열기
+          </button>
+          <button onClick={handleDownloadPdf} className="w-full bg-white text-slate-700 py-3.5 rounded-2xl font-bold text-sm border border-slate-200 flex items-center justify-center gap-2 active:scale-95 transition-all">
+            <Download size={16} /> PDF 다운로드
+          </button>
         </div>
 
-        <button onClick={handleExport} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold text-sm shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-all">
-          <Download size={16} /> EXCEL 다운로드
+        <button
+          onClick={() => setShowAdvanced((v) => !v)}
+          className="w-full bg-white text-slate-600 py-3 rounded-2xl font-bold text-sm border border-slate-200 flex items-center justify-center gap-2"
+        >
+          <SlidersHorizontal size={16} /> {showAdvanced ? '고급 필터 닫기' : '고급 필터 열기'}
         </button>
+
+        {showAdvanced && (
+          <div className="flex gap-2 items-center bg-slate-50 p-2 rounded-2xl">
+            <input type="date" className="flex-1 p-2 bg-white rounded-xl text-[10px] font-bold" value={start} onChange={(e) => setStart(e.target.value)} />
+            <span className="text-slate-300">~</span>
+            <input type="date" className="flex-1 p-2 bg-white rounded-xl text-[10px] font-bold" value={end} onChange={(e) => setEnd(e.target.value)} />
+            <button onClick={() => { setStart(''); setEnd(''); }} className="p-2 text-blue-500 active:scale-90"><RotateCcw size={14} /></button>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto space-y-3 pb-8">
-        {filtered.map(r => {
+        {filtered.map((r) => {
           const improveCount = getImproveCount(r);
           const hasIssue = improveCount > 0;
           const label = statusLabel(r.status);
@@ -151,7 +199,9 @@ const AdminRecordsView = ({ user, records, onBack, onDetail }) => {
         })}
 
         {filtered.length === 0 && (
-          <div className="p-8 bg-slate-50 rounded-[2rem] text-center text-slate-400 font-bold">조회된 내역이 없습니다.</div>
+          <div className="p-8 bg-slate-50 rounded-[2rem] text-center text-slate-400 font-bold">
+            조회된 점검 내역이 없습니다.
+          </div>
         )}
       </div>
     </div>

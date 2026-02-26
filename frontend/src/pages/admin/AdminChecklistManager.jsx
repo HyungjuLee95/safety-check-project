@@ -3,11 +3,19 @@ import { ArrowLeft, Plus, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
 import { safetyApi } from '../../services/api';
 
 const AdminChecklistManager = ({ user, categories, onBack }) => {
-  const [cat, setCat] = useState(categories[0]);
+  const [cat, setCat] = useState((categories && categories[0]) || '');
   const [items, setItems] = useState([]);
   const [newItem, setNewItem] = useState('');
 
+
   useEffect(() => {
+    if (!cat && categories?.length) {
+      setCat(categories[0]);
+    }
+  }, [categories, cat]);
+
+  useEffect(() => {
+    if (!cat) return;
     const load = async () => {
       const data = await safetyApi.getChecklist(cat);
       const list = (data.items || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0));
