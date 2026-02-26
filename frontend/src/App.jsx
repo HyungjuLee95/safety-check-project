@@ -369,7 +369,7 @@ const handleReject = async ({ inspectionId, subadminName, reason }) => {
 
   return (
     <PhoneFrame>
-      <LoadingOverlay isLoading={isLoading} />
+      <LoadingOverlay show={isLoading} />
 
       {/* 로그인 */}
       {view === 'login' && <LoginView onLogin={handleLogin} />}

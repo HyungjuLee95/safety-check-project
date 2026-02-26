@@ -23,7 +23,6 @@ const api = axios.create({
 
 const downloadNameCounter = new Map();
 
-
 function buildQuery(params = {}) {
   const q = new URLSearchParams();
   Object.entries(params || {}).forEach(([k, v]) => {
@@ -56,12 +55,10 @@ function extractFileNameFromDisposition(disposition, fallbackName) {
   const fallback = fallbackName || `download_${Date.now()}.pdf`;
   const cd = String(disposition || '');
 
-  // 1) RFC 5987: filename*=UTF-8''...
-  // 예) attachment; filename="x.pdf"; filename*=UTF-8''x.pdf
+  // RFC 5987: filename*=UTF-8''...
   const starMatch = cd.match(/filename\*\s*=\s*([^;]+)/i);
   if (starMatch && starMatch[1]) {
-    const raw = starMatch[1].trim().replace(/^"|"$/g, ''); // 따옴표 제거
-    // UTF-8''<urlencoded>
+    const raw = starMatch[1].trim().replace(/^"|"$/g, '');
     const parts = raw.split("''");
     if (parts.length === 2) {
       const encoded = parts[1];
@@ -71,7 +68,6 @@ function extractFileNameFromDisposition(disposition, fallbackName) {
         return encoded;
       }
     }
-    // 혹시 '' 포맷이 아니어도 값만 쓰기
     try {
       return decodeURIComponent(raw);
     } catch {
@@ -79,7 +75,7 @@ function extractFileNameFromDisposition(disposition, fallbackName) {
     }
   }
 
-  // 2) filename="..."
+  // filename="..."
   const match = cd.match(/filename\s*=\s*"?([^";]+)"?/i);
   if (match && match[1]) return match[1];
 
@@ -102,7 +98,6 @@ function triggerBlobDownload(blob, fileName) {
  */
 export const safetyApi = {
   // --- 1. 공통 및 사용자 설정 조회 ---
-
   loginUser: async (payload) => {
     try {
       const response = await api.post('/users/login', payload);
@@ -133,19 +128,6 @@ export const safetyApi = {
       console.error('점검 업무 목록 로딩 실패:', error);
       return {
         workTypes: ['X-ray 설치작업', 'MR 설치작업', 'CT 작업', '정기 유지보수'],
-      };
-    }
-  },
-
-  // 점검 업무(카테고리) 목록 조회
-  getWorkTypes: async () => {
-    try {
-      const response = await api.get('/settings/work-types');
-      return response.data;
-    } catch (error) {
-      console.error('점검 업무 목록 로딩 실패:', error);
-      return {
-        workTypes: ['X-ray 설치작업', 'MR 설치작업', 'CT 작업', '정기 유지보수']
       };
     }
   },
@@ -276,8 +258,7 @@ export const safetyApi = {
     }
   },
 
-  // ✅ (신규) 단건 PDF 다운로드 (MASTER_ADMIN 상세에서 사용)
-  // backend: GET /api/v1/inspections/{inspection_id}/export-pdf?admin_name=...&requester_role=...&requester_categories=...
+  // 단건 PDF 다운로드 (MASTER_ADMIN 상세)
   exportSingleInspectionPdf: async (inspectionId, params) => {
     try {
       if (!inspectionId) throw new Error('inspectionId is required');
@@ -288,9 +269,10 @@ export const safetyApi = {
       });
 
       const disposition = response.headers?.['content-disposition'] || '';
-      const match = disposition.match(/filename="?([^";]+)"?/i);
-      const serverFileName = match?.[1] || `safety_report_${new Date().getTime()}.pdf`;
-      link.setAttribute('download', makeIncrementedFileName(serverFileName));
+      const serverFileName = extractFileNameFromDisposition(
+        disposition,
+        `inspection_${inspectionId}.pdf`
+      );
 
       triggerBlobDownload(new Blob([response.data], { type: 'application/pdf' }), serverFileName);
     } catch (error) {
@@ -299,9 +281,7 @@ export const safetyApi = {
     }
   },
 
-  // ✅ (신규) 선택 다건 PDF 다운로드 (MASTER_ADMIN 리스트에서 체크된 항목만)
-  // backend: POST /api/v1/inspections/export-pdf-selected?admin_name=...
-  // body: { inspectionIds: [...], requester_role, requester_categories }
+  // 선택 다건 PDF 다운로드 (MASTER_ADMIN 리스트 체크박스)
   exportSelectedInspectionsPdf: async (inspectionIds, params) => {
     try {
       const ids = Array.isArray(inspectionIds) ? inspectionIds.filter(Boolean) : [];
@@ -333,8 +313,6 @@ export const safetyApi = {
       throw error;
     }
   },
-
-
 
   openInspectionsPdf: (params) => {
     const query = buildQuery({ ...(params || {}), mode: 'inline' });
@@ -373,7 +351,6 @@ export const safetyApi = {
     }
   },
 
-  // 점검 업무 목록 수정/업데이트
   updateWorkTypes: async (adminName, workTypes) => {
     try {
       const response = await api.post('/settings/work-types', { adminName, workTypes });
@@ -382,7 +359,7 @@ export const safetyApi = {
       console.error('점검 업무 목록 업데이트 실패:', error);
       throw error;
     }
-  }
+  },
 };
 
 export default api;

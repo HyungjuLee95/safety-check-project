@@ -26,12 +26,14 @@ from app.storage.firestore_client import get_firestore_client
 router = APIRouter(tags=["inspections"])
 
 
-def _content_disposition(filename: str) -> str:
+def _content_disposition(filename: str, mode: str = "attachment") -> str:
     """
     모바일/브라우저 호환을 위해 filename* 포함 (UTF-8)
+    mode: attachment | inline
     """
     safe = filename.replace('"', "")
-    return f'attachment; filename="{safe}"; filename*=UTF-8\'\'{quote(safe)}'
+    disposition = "inline" if str(mode or "").lower() == "inline" else "attachment"
+    return f'{disposition}; filename="{safe}"; filename*=UTF-8\'\'{quote(safe)}'
 
 
 def _parse_categories(categories_str: Optional[str]) -> List[str]:
@@ -131,7 +133,7 @@ def export_inspections(
     return StreamingResponse(
         stream,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": _content_disposition(filename)},
+        headers={"Content-Disposition": _content_disposition(filename, mode="attachment")},
     )
 
 
@@ -142,6 +144,7 @@ def export_inspections_pdf(
     end_date: str,
     requester_role: Optional[str] = None,
     requester_categories: Optional[str] = None,
+    mode: Optional[str] = "attachment",
 ):
     categories = _parse_categories(requester_categories)
     data = list_admin_inspections(
@@ -163,13 +166,11 @@ def export_inspections_pdf(
     return StreamingResponse(
         stream,
         media_type="application/pdf",
-        headers={"Content-Disposition": _content_disposition(filename)},
+        headers={"Content-Disposition": _content_disposition(filename, mode=mode or "attachment")},
     )
 
 
-# -----------------------------
 # NEW: 단건 PDF 다운로드
-# -----------------------------
 @router.get("/inspections/{inspection_id}/export-pdf")
 def export_single_inspection_pdf(
     inspection_id: str,
@@ -185,7 +186,6 @@ def export_single_inspection_pdf(
 
     role = str(requester_role or "").strip().upper()
     if role == "SUB_ADMIN" and categories:
-        # 서브어드민 카테고리 권한 체크
         if not can_subadmin_handle_inspection(inspection_id, categories):
             raise HTTPException(status_code=403, detail="subadmin cannot access this category")
 
@@ -199,12 +199,11 @@ def export_single_inspection_pdf(
     stream = io.BytesIO(pdf_bytes)
     stream.seek(0)
 
-    # 파일명은 안전하게 id 기반(한글/특수문자 이슈 최소화)
     filename = f"inspection_{inspection_id}.pdf"
     return StreamingResponse(
         stream,
         media_type="application/pdf",
-        headers={"Content-Disposition": _content_disposition(filename)},
+        headers={"Content-Disposition": _content_disposition(filename, mode="attachment")},
     )
 
 
@@ -214,18 +213,14 @@ class ExportSelectedPdfRequest(BaseModel):
     requester_categories: Optional[str] = None
 
 
-# -----------------------------
 # NEW: 선택 다건 PDF 다운로드 (체크박스 선택)
-# -----------------------------
 @router.post("/inspections/export-pdf-selected")
 def export_selected_inspections_pdf(
     body: ExportSelectedPdfRequest,
     admin_name: str,
 ):
     """
-    MASTER_ADMIN 리스트 화면에서 체크된 항목들만 PDF로 묶어 다운로드.
-    - inspectionIds: ["rec-xxxx", ...]
-    - pdf_export_service 내부에서 SUBMITTED만 출력하도록 되어있으면 자동으로 승인건만 담김.
+    MASTER_ADMIN 리스트 화면에서 체크된 항목들만 PDF로 묶어 다로드.
     """
     ids = [str(i).strip() for i in (body.inspectionIds or []) if str(i).strip()]
     if not ids:
@@ -241,7 +236,6 @@ def export_selected_inspections_pdf(
                 raise HTTPException(status_code=403, detail="subadmin cannot access this category")
         records.append(_fetch_inspection_export_shape(inspection_id))
 
-    # 선택 다운로드 파일명
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"safety_reports_selected_{ts}.pdf"
 
@@ -256,44 +250,9 @@ def export_selected_inspections_pdf(
     return StreamingResponse(
         stream,
         media_type="application/pdf",
-        headers={"Content-Disposition": _content_disposition(filename)},
+        headers={"Content-Disposition": _content_disposition(filename, mode="attachment")},
     )
 
-
-
-
-@router.get("/inspections/export-pdf")
-def export_inspections_pdf(
-    admin_name: str,
-    start_date: str,
-    end_date: str,
-    requester_role: Optional[str] = None,
-    requester_categories: Optional[str] = None,
-    mode: Optional[str] = "attachment",
-):
-    categories = [c.strip() for c in str(requester_categories or "").split(",") if c.strip()]
-    data = list_admin_inspections(
-        start_date,
-        end_date,
-        requester_role=requester_role,
-        requester_categories=categories,
-    )
-
-    try:
-        pdf_bytes = build_inspections_pdf_bytes(data)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"pdf export failed: {exc}")
-
-    stream = io.BytesIO(pdf_bytes)
-    stream.seek(0)
-
-    filename = build_export_pdf_filename(start_date, end_date)
-    disposition = "inline" if str(mode or "").lower() == "inline" else "attachment"
-    return StreamingResponse(
-        stream,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f"{disposition}; filename={filename}"},
-    )
 
 @router.get("/me/inspections")
 def me_list_inspections(userName: str, start_date: Optional[str] = None, end_date: Optional[str] = None):
