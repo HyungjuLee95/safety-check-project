@@ -5,6 +5,7 @@ const emptyForm = { name: '', phoneLast4: '', categories: [] };
 
 const AdminSubadminManager = ({ categories, subadmins, onRefresh, onBack, onCreate, onUpdate, onDelete }) => {
   const [createForm, setCreateForm] = useState(emptyForm);
+  const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState(emptyForm);
 
@@ -25,13 +26,18 @@ const AdminSubadminManager = ({ categories, subadmins, onRefresh, onBack, onCrea
     });
   };
 
+  const closeCreateForm = () => {
+    setCreateForm(emptyForm);
+    setShowCreateForm(false);
+  };
+
   const submitCreate = async () => {
     if (!createForm.name.trim() || createForm.phoneLast4.length !== 4) {
       alert('이름과 휴대폰 뒷번호 4자리를 입력해주세요.');
       return;
     }
     await onCreate(createForm);
-    setCreateForm(emptyForm);
+    closeCreateForm();
   };
 
   const submitUpdate = async () => {
@@ -52,32 +58,51 @@ const AdminSubadminManager = ({ categories, subadmins, onRefresh, onBack, onCrea
         <h2 className="text-xl font-bold flex-1 text-center pr-8 tracking-tight">서브관리자 권한 관리</h2>
       </div>
 
-      <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl mb-4 space-y-3">
-        <input
-          className="w-full p-3 rounded-xl border border-slate-200 text-sm font-bold"
-          placeholder="이름"
-          value={createForm.name}
-          onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
-        />
-        <input
-          className="w-full p-3 rounded-xl border border-slate-200 text-sm font-bold"
-          placeholder="핸드폰 뒷자리 4자리"
-          value={createForm.phoneLast4}
-          onChange={(e) => setCreateForm({ ...createForm, phoneLast4: e.target.value.replace(/\D/g, '').slice(0, 4) })}
-        />
-        <div className="flex flex-wrap gap-2">
-          {categoryOptions.map((cat) => (
-            <button
-              key={cat}
-              onClick={() => toggleCategory('create', cat)}
-              className={`px-3 py-2 rounded-full text-[11px] font-bold ${createForm.categories.includes(cat) ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 border border-slate-200'}`}
-            >
-              {cat}
+      {!showCreateForm && (
+        <button
+          onClick={() => setShowCreateForm(true)}
+          className="w-full py-3 rounded-xl bg-slate-900 text-white font-bold flex justify-center gap-2 mb-4"
+        >
+          <Plus size={16} />서브관리자 등록
+        </button>
+      )}
+
+      {showCreateForm && (
+        <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl mb-4 space-y-3">
+          <input
+            className="w-full p-3 rounded-xl border border-slate-200 text-sm font-bold"
+            placeholder="이름"
+            value={createForm.name}
+            onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
+          />
+          <input
+            className="w-full p-3 rounded-xl border border-slate-200 text-sm font-bold"
+            placeholder="핸드폰 뒷자리 4자리"
+            value={createForm.phoneLast4}
+            onChange={(e) => setCreateForm({ ...createForm, phoneLast4: e.target.value.replace(/\D/g, '').slice(0, 4) })}
+          />
+          <div className="flex flex-wrap gap-2">
+            {categoryOptions.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => toggleCategory('create', cat)}
+                className={`px-3 py-2 rounded-full text-[11px] font-bold ${createForm.categories.includes(cat) ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 border border-slate-200'}`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={submitCreate} className="w-full py-3 rounded-xl bg-slate-900 text-white font-bold">
+              등록
             </button>
-          ))}
+            <button onClick={closeCreateForm} className="w-full py-3 rounded-xl bg-slate-200 text-slate-700 font-bold">
+              취소
+            </button>
+          </div>
         </div>
-        <button onClick={submitCreate} className="w-full py-3 rounded-xl bg-slate-900 text-white font-bold flex justify-center gap-2"><Plus size={16} />서브관리자 등록</button>
-      </div>
+      )}
 
       <div className="flex-1 overflow-y-auto space-y-3 pb-8">
         {(subadmins || []).map((s) => {

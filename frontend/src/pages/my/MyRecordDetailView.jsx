@@ -21,6 +21,13 @@ const MyRecordDetailView = ({ detail, onBack, onEdit }) => {
         <p className="text-xs font-medium text-slate-300">{detail?.equipmentName || '장비명 없음'} · {detail?.workType}</p>
         <p className="text-[11px] font-bold text-slate-400 mt-3">상태: {statusLabel(detail?.status)} · 개선필요 {improveCount}건</p>
 
+        {String(detail?.status || '').toUpperCase() === 'REJECTED' && !!detail?.rejectReason && (
+          <div className="mt-3 rounded-xl bg-red-500/15 border border-red-300/40 p-3">
+            <p className="text-[11px] font-black text-red-200">반려 사유</p>
+            <p className="text-xs font-bold text-red-100 mt-1 whitespace-pre-line">{detail.rejectReason}</p>
+          </div>
+        )}
+
         <button
           onClick={onEdit}
           disabled={detail?.status === 'CANCELLED'}
