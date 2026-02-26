@@ -153,19 +153,50 @@ const AdminRecordsView = ({ user, records, onBack, onDetail }) => {
           const hasIssue = improveCount > 0;
           const label = statusLabel(r.status);
 
+          const isSubmitted = normalizeStatus(r.status) === 'SUBMITTED';
+          const isSelected = selectedIds.has(r.id);
+
           return (
             <div
               key={r.id}
-              className="p-5 bg-white border border-slate-100 rounded-[1.5rem] shadow-sm active:scale-95 transition-all"
-              onClick={() => onDetail(r)}
+              className={`p-5 bg-white border rounded-[1.5rem] shadow-sm transition-all ${
+                isSelected ? 'border-blue-500 ring-2 ring-blue-100' : 'border-slate-100'
+              } ${selectMode ? '' : 'active:scale-95'}`}
+              onClick={() => {
+                if (selectMode) return toggleSelect(r);
+                onDetail(r);
+              }}
             >
               <div className="flex justify-between items-start mb-2">
-                <div>
-                  <p className="font-bold text-slate-800">{r.name}</p>
-                  <p className="text-[10px] text-slate-400 font-medium">
-                    {r.hospital}{r.equipmentName ? ` · ${r.equipmentName}` : ''}
-                  </p>
-                  <p className="text-[10px] text-slate-400 font-bold mt-1">{r.workType}</p>
+                <div className="flex gap-3 items-start">
+                  {/* ✅ 선택 모드일 때 체크박스 노출 */}
+                  {selectMode && (
+                    <div
+                      className={`mt-1 w-6 h-6 rounded-lg border flex items-center justify-center ${
+                        !isSubmitted ? 'bg-slate-100 border-slate-200' : isSelected ? 'bg-blue-600 border-blue-600' : 'bg-white border-slate-300'
+                      }`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleSelect(r);
+                      }}
+                      title={!isSubmitted ? '승인 완료 건만 선택 가능' : ''}
+                      role="button"
+                      tabIndex={0}
+                    >
+                      {isSelected && (
+                        <span className="text-white text-[12px] font-black">✓</span>
+                      )}
+                    </div>
+                  )}
+
+                  <div>
+                    <p className="font-bold text-slate-800">{r.name}</p>
+                    <p className="text-[10px] text-slate-400 font-medium">
+                      {r.hospital}
+                      {r.equipmentName ? ` · ${r.equipmentName}` : ''}
+                    </p>
+                    <p className="text-[10px] text-slate-400 font-bold mt-1">{r.workType}</p>
+                  </div>
                 </div>
 
                 <div className="flex flex-col items-end gap-1">
@@ -183,16 +214,23 @@ const AdminRecordsView = ({ user, records, onBack, onDetail }) => {
                   </div>
 
                   {!!label && (
-                    <span className="text-[9px] text-slate-500 font-extrabold">
-                      {label}
-                    </span>
+                    <span className="text-[9px] text-slate-500 font-extrabold">{label}</span>
                   )}
                 </div>
               </div>
 
               <div className="flex justify-between items-center pt-3 border-t border-slate-50 text-[9px] text-slate-400 font-bold uppercase tracking-widest">
                 <span>{r.date}</span>
-                <span className="text-blue-500 font-black flex items-center gap-1">Detail <ChevronRight size={10} /></span>
+
+                {selectMode ? (
+                  <span className="text-blue-500 font-black flex items-center gap-1">
+                    Select <ChevronRight size={10} />
+                  </span>
+                ) : (
+                  <span className="text-blue-500 font-black flex items-center gap-1">
+                    Detail <ChevronRight size={10} />
+                  </span>
+                )}
               </div>
             </div>
           );
