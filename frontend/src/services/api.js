@@ -23,7 +23,6 @@ const api = axios.create({
 
 const downloadNameCounter = new Map();
 
-
 function buildQuery(params = {}) {
   const q = new URLSearchParams();
   Object.entries(params || {}).forEach(([k, v]) => {
@@ -40,7 +39,7 @@ function buildAbsoluteApiUrl(pathWithQuery) {
 }
 
 function makeIncrementedFileName(fileName) {
-  const safeName = fileName || 'safety_report.xlsx';
+  const safeName = fileName || 'safety_report.pdf';
   const dot = safeName.lastIndexOf('.');
   const base = dot > 0 ? safeName.slice(0, dot) : safeName;
   const ext = dot > 0 ? safeName.slice(dot) : '';
@@ -52,14 +51,54 @@ function makeIncrementedFileName(fileName) {
   return `${base}_${current}${ext}`;
 }
 
+function extractFileNameFromDisposition(disposition, fallbackName) {
+  const fallback = fallbackName || `download_${Date.now()}.pdf`;
+  const cd = String(disposition || '');
+
+  // RFC 5987: filename*=UTF-8''...
+  const starMatch = cd.match(/filename\*\s*=\s*([^;]+)/i);
+  if (starMatch && starMatch[1]) {
+    const raw = starMatch[1].trim().replace(/^"|"$/g, '');
+    const parts = raw.split("''");
+    if (parts.length === 2) {
+      const encoded = parts[1];
+      try {
+        return decodeURIComponent(encoded);
+      } catch {
+        return encoded;
+      }
+    }
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  }
+
+  // filename="..."
+  const match = cd.match(/filename\s*=\s*"?([^";]+)"?/i);
+  if (match && match[1]) return match[1];
+
+  return fallback;
+}
+
+function triggerBlobDownload(blob, fileName) {
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', makeIncrementedFileName(fileName));
+  document.body.appendChild(link);
+  link.click();
+  link.parentNode.removeChild(link);
+  window.URL.revokeObjectURL(url);
+}
+
 /**
  * 안전 점검 시스템 API 서비스 모듈
  */
 export const safetyApi = {
   // --- 1. 공통 및 사용자 설정 조회 ---
-
   loginUser: async (payload) => {
-    // payload: { name, phoneLast4 }
     try {
       const response = await api.post('/users/login', payload);
       return response.data;
@@ -69,7 +108,6 @@ export const safetyApi = {
     }
   },
 
-  // 작업 장소(병원) 목록 조회
   getHospitals: async () => {
     try {
       const response = await api.get('/settings/hospitals');
@@ -77,12 +115,11 @@ export const safetyApi = {
     } catch (error) {
       console.error('장소 목록 로딩 실패:', error);
       return {
-        hospitals: ["서울대병원", "아산병원", "삼성서울병원", "세브란스병원", "경희대병원"]
+        hospitals: ['서울대병원', '아산병원', '삼성서울병원', '세브란스병원', '경희대병원'],
       };
     }
   },
 
-  // 점검 업무(카테고리) 목록 조회
   getWorkTypes: async () => {
     try {
       const response = await api.get('/settings/work-types');
@@ -90,7 +127,7 @@ export const safetyApi = {
     } catch (error) {
       console.error('점검 업무 목록 로딩 실패:', error);
       return {
-        workTypes: ['X-ray 설치작업', 'MR 설치작업', 'CT 작업', '정기 유지보수']
+        workTypes: ['X-ray 설치작업', 'MR 설치작업', 'CT 작업', '정기 유지보수'],
       };
     }
   },
@@ -104,41 +141,29 @@ export const safetyApi = {
       console.error('체크리스트 로딩 실패:', error);
       return {
         items: [
-          { id: "1", text: "작업 전 안전 보호구(헬멧, 안전화 등)를 착용하였는가?", order: 1, code: "a" },
-          { id: "2", text: "작업 전 본인의 건강 상태는 양호한가?", order: 2, code: "b" },
-          { id: "3", text: "사용할 공구 및 장비의 육안 점검을 실시하였는가?", order: 3, code: "c" },
-          { id: "4", text: "사전 안전수칙 및 작업 절차를 숙지하였는가?", order: 4, code: "d" },
-          { id: "5", text: "작업장 주변 정리정돈 및 위험 요소 제거를 완료했는가?", order: 5, code: "e" }
-        ]
+          { id: '1', text: '작업 전 안전 보호구(헬멧, 안전화 등)를 착용하였는가?', order: 1, code: 'a' },
+          { id: '2', text: '작업 전 본인의 건강 상태는 양호한가?', order: 2, code: 'b' },
+          { id: '3', text: '사용할 공구 및 장비의 육안 점검을 실시하였는가?', order: 3, code: 'c' },
+          { id: '4', text: '사전 안전수칙 및 작업 절차를 숙지하였는가?', order: 4, code: 'd' },
+          { id: '5', text: '작업장 주변 정리정돈 및 위험 요소 제거를 완료했는가?', order: 5, code: 'e' },
+        ],
       };
     }
   },
 
   // --- 2. 점검 결과 제출 (User) ---
-
-  // 점검표 및 서명 데이터 제출
-  // inspectionData 구조:
-  // {
-  //   userName, date, hospital, equipmentName, workType,
-  //   checklistVersion, answers: [{itemId, question, value, comment?}], signatureBase64
-  // }
   submitInspection: async (inspectionData) => {
     try {
       const response = await api.post('/inspections', inspectionData);
       return response.data;
     } catch (error) {
       console.error('점검 결과 제출 실패:', error);
-      // 백엔드에서 "점검 필요 내용을 기재해주세요"를 400으로 보낼 수 있음
-      // 프론트에서 제출 전 검증으로 팝업 띄우는 방식이 UX 최선.
       throw error;
     }
   },
 
-  // --- 2-1. 유저 내 점검 내역 (추후 App.jsx에서 메뉴 연결) ---
-
-  // 내 점검 목록: 날짜 + 상태 + 개선필요 개수 (+ 병원/장비)
+  // --- 2-1. 유저 내 점검 내역 ---
   getMyInspections: async (params) => {
-    // params: { userName, start_date?, end_date? }
     try {
       const response = await api.get('/me/inspections', { params });
       return response.data;
@@ -148,9 +173,7 @@ export const safetyApi = {
     }
   },
 
-  // 내 점검 상세(최신 revision)
   getMyInspectionDetail: async (params) => {
-    // params: { userName, date, hospital, equipmentName? }
     try {
       const response = await api.get('/me/inspections/detail', { params });
       return response.data;
@@ -160,9 +183,7 @@ export const safetyApi = {
     }
   },
 
-  // (선택) 내 점검 취소 - 삭제가 아니라 status만 CANCELLED로 변경
   cancelMyInspection: async (payload) => {
-    // payload: { userName, date, hospital, equipmentName? }
     try {
       const response = await api.post('/me/inspections/cancel', payload);
       return response.data;
@@ -172,9 +193,7 @@ export const safetyApi = {
     }
   },
 
-  // 내 점검 재제출(기존 레코드에 revision 추가)
   resubmitMyInspection: async (payload) => {
-    // payload: { userName, date, hospital, equipmentName?, answers, signatureBase64? }
     try {
       const response = await api.post('/me/inspections/resubmit', payload);
       return response.data;
@@ -185,8 +204,6 @@ export const safetyApi = {
   },
 
   // --- 3. 관리자 전용 기능 (Admin) ---
-
-
   getSubadmins: async () => {
     const response = await api.get('/subadmins');
     return response.data;
@@ -207,7 +224,6 @@ export const safetyApi = {
     return response.data;
   },
 
-  // 전체 점검 내역 조회 (필터링 포함)
   getInspections: async (params) => {
     try {
       const response = await api.get('/inspections', { params });
@@ -229,27 +245,74 @@ export const safetyApi = {
         responseType: 'blob',
       });
 
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-
       const disposition = response.headers?.['content-disposition'] || '';
-      const match = disposition.match(/filename="?([^";]+)"?/i);
-      const serverFileName = match?.[1] || `safety_report_${new Date().getTime()}.pdf`;
-      link.setAttribute('download', makeIncrementedFileName(serverFileName));
+      const serverFileName = extractFileNameFromDisposition(
+        disposition,
+        `safety_report_${new Date().getTime()}.pdf`
+      );
 
-      document.body.appendChild(link);
-      link.click();
-
-      link.parentNode.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      triggerBlobDownload(new Blob([response.data], { type: 'application/pdf' }), serverFileName);
     } catch (error) {
       console.error('PDF 다운로드 실패:', error);
       throw error;
     }
   },
 
+  // 단건 PDF 다운로드 (MASTER_ADMIN 상세)
+  exportSingleInspectionPdf: async (inspectionId, params) => {
+    try {
+      if (!inspectionId) throw new Error('inspectionId is required');
 
+      const response = await api.get(`/inspections/${encodeURIComponent(inspectionId)}/export-pdf`, {
+        params,
+        responseType: 'blob',
+      });
+
+      const disposition = response.headers?.['content-disposition'] || '';
+      const serverFileName = extractFileNameFromDisposition(
+        disposition,
+        `inspection_${inspectionId}.pdf`
+      );
+
+      triggerBlobDownload(new Blob([response.data], { type: 'application/pdf' }), serverFileName);
+    } catch (error) {
+      console.error('단건 PDF 다운로드 실패:', error);
+      throw error;
+    }
+  },
+
+  // 선택 다건 PDF 다운로드 (MASTER_ADMIN 리스트 체크박스)
+  exportSelectedInspectionsPdf: async (inspectionIds, params) => {
+    try {
+      const ids = Array.isArray(inspectionIds) ? inspectionIds.filter(Boolean) : [];
+      if (ids.length === 0) throw new Error('inspectionIds is required');
+
+      const adminName = params?.admin_name || params?.adminName;
+      if (!adminName) throw new Error('admin_name is required');
+
+      const body = {
+        inspectionIds: ids,
+        requester_role: params?.requester_role || params?.requesterRole,
+        requester_categories: params?.requester_categories || params?.requesterCategories,
+      };
+
+      const response = await api.post('/inspections/export-pdf-selected', body, {
+        params: { admin_name: adminName },
+        responseType: 'blob',
+      });
+
+      const disposition = response.headers?.['content-disposition'] || '';
+      const serverFileName = extractFileNameFromDisposition(
+        disposition,
+        `safety_reports_selected_${new Date().getTime()}.pdf`
+      );
+
+      triggerBlobDownload(new Blob([response.data], { type: 'application/pdf' }), serverFileName);
+    } catch (error) {
+      console.error('PDF 다운로드 실패:', error);
+      throw error;
+    }
+  },
 
   openInspectionsPdf: (params) => {
     const query = buildQuery({ ...(params || {}), mode: 'inline' });
@@ -259,18 +322,15 @@ export const safetyApi = {
 
   // (SUBADMIN) 승인/반려
   approveInspection: async (id, payload) => {
-    // payload: { subadminName?, signatureBase64? }
     const response = await api.post(`/inspections/${id}/approve`, payload || {});
     return response.data;
   },
 
   rejectInspection: async (id, payload) => {
-    // payload: { subadminName?, reason? }
     const response = await api.post(`/inspections/${id}/reject`, payload || {});
     return response.data;
   },
 
-  // 체크리스트 항목 수정/업데이트 (in-memory 반영)
   updateChecklist: async (data) => {
     try {
       const response = await api.post('/checklists', data);
@@ -281,7 +341,6 @@ export const safetyApi = {
     }
   },
 
-  // 작업 장소 목록 수정/업데이트 (in-memory 반영)
   updateHospitals: async (adminName, hospitals) => {
     try {
       const response = await api.post('/settings/hospitals', { adminName, hospitals });
@@ -292,7 +351,6 @@ export const safetyApi = {
     }
   },
 
-  // 점검 업무 목록 수정/업데이트
   updateWorkTypes: async (adminName, workTypes) => {
     try {
       const response = await api.post('/settings/work-types', { adminName, workTypes });
@@ -301,7 +359,7 @@ export const safetyApi = {
       console.error('점검 업무 목록 업데이트 실패:', error);
       throw error;
     }
-  }
+  },
 };
 
 export default api;

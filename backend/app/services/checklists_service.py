@@ -1,8 +1,6 @@
 
 
 ## 2) `backend/app/services/checklists_service.py`
-
-```python
 import datetime
 from typing import Any, Dict, List
 

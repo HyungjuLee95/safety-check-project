@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Download } from 'lucide-react';
+import { safetyApi } from '../../services/api';
 
 // YES/NO 레거시 대응
 function normalizeToUiValue(value) {
@@ -22,6 +23,19 @@ function signatureSrc(signatureBase64) {
   const s = String(signatureBase64);
   if (s.startsWith('data:image/')) return s;
   return `data:image/png;base64,${s}`;
+}
+
+function normalizeStatus(status) {
+  return String(status || '').trim().toUpperCase();
+}
+
+function displayStatus(status) {
+  const s = normalizeStatus(status);
+  if (s === 'SUBMITTED') return '승인 완료';
+  if (s === 'PENDING') return '승인 대기';
+  if (s === 'REJECTED') return '반려';
+  if (s === 'CANCELLED') return '취소';
+  return String(status || '');
 }
 
 const AdminRecordDetailView = ({ user, record, onBack, onApprove, onReject }) => {
@@ -108,7 +122,6 @@ const AdminRecordDetailView = ({ user, record, onBack, onApprove, onReject }) =>
     if (!c) return;
 
     // 간단 검증: 완전 흰색이면 서명 없다고 판단(대충)
-    // (좀 더 정확한 검증은 픽셀 검사 가능하지만 지금은 가볍게)
     const dataUrl = c.toDataURL('image/png');
     if (!dataUrl || dataUrl.length < 200) {
       alert('서명을 입력해주세요.');
@@ -162,8 +175,33 @@ const AdminRecordDetailView = ({ user, record, onBack, onApprove, onReject }) =>
           {' · '}
           {record?.workType}
         </p>
+
         {record?.status && (
-          <p className="text-[11px] font-bold text-slate-400 mt-3">상태: {record.status}</p>
+          <p className="text-[11px] font-bold text-slate-400 mt-3">
+            상태: {displayStatus(record.status)}
+          </p>
+        )}
+
+        {/* ✅ MASTER_ADMIN 전용: 단건 PDF 다운로드 (승인 완료만) */}
+        {isMasterAdmin && (
+          <div className="mt-4">
+            <button
+              onClick={handleDownloadSinglePdf}
+              disabled={!isApproved || downloadingPdf}
+              className={`w-full py-3 rounded-xl font-black text-xs shadow-md flex items-center justify-center gap-2 transition-all ${
+                !isApproved || downloadingPdf
+                  ? 'bg-slate-700 text-slate-300'
+                  : 'bg-white text-slate-900 active:scale-95'
+              }`}
+              title={!isApproved ? '승인 완료 건만 다운로드 가능합니다.' : ''}
+            >
+              <Download size={16} />
+              {downloadingPdf ? '다운로드 중...' : '단건 PDF 다운로드'}
+            </button>
+            <p className="mt-2 text-[10px] text-slate-400 font-bold">
+              * 승인 완료 건(SUBMITTED)만 다운로드됩니다.
+            </p>
+          </div>
         )}
 
         {/* SUBADMIN 승인/반려 */}
