@@ -260,6 +260,41 @@ def export_selected_inspections_pdf(
     )
 
 
+
+
+@router.get("/inspections/export-pdf")
+def export_inspections_pdf(
+    admin_name: str,
+    start_date: str,
+    end_date: str,
+    requester_role: Optional[str] = None,
+    requester_categories: Optional[str] = None,
+    mode: Optional[str] = "attachment",
+):
+    categories = [c.strip() for c in str(requester_categories or "").split(",") if c.strip()]
+    data = list_admin_inspections(
+        start_date,
+        end_date,
+        requester_role=requester_role,
+        requester_categories=categories,
+    )
+
+    try:
+        pdf_bytes = build_inspections_pdf_bytes(data)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"pdf export failed: {exc}")
+
+    stream = io.BytesIO(pdf_bytes)
+    stream.seek(0)
+
+    filename = build_export_pdf_filename(start_date, end_date)
+    disposition = "inline" if str(mode or "").lower() == "inline" else "attachment"
+    return StreamingResponse(
+        stream,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"{disposition}; filename={filename}"},
+    )
+
 @router.get("/me/inspections")
 def me_list_inspections(userName: str, start_date: Optional[str] = None, end_date: Optional[str] = None):
     return list_my_inspections(userName, start_date, end_date)

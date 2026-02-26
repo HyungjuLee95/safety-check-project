@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ArrowLeft, Search, Download, RotateCcw, ChevronRight, CheckSquare, X } from 'lucide-react';
+import { ArrowLeft, Search, Download, RotateCcw, ChevronRight, FileText, SlidersHorizontal } from 'lucide-react';
 import { safetyApi } from '../../services/api';
 
 const STATUS_TABS = [
@@ -28,79 +28,38 @@ const statusLabel = (raw) => {
   return '';
 };
 
+const isKakaoInApp = () => {
+  if (typeof window === 'undefined' || !window.navigator) return false;
+  return /KAKAOTALK/i.test(window.navigator.userAgent || '');
+};
+
 const AdminRecordsView = ({ user, records, onBack, onDetail }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [tab, setTab] = useState('ALL');
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
-  // ✅ 선택 다운로드 모드
-  const [selectMode, setSelectMode] = useState(false);
-  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const buildExportParams = () => ({
+    admin_name: user.name,
+    start_date: start || '2000-01-01',
+    end_date: end || '2099-12-31',
+    requester_role: user?.role,
+    requester_categories: (user?.categories || []).join(','),
+  });
 
-  const requesterParams = useMemo(() => {
-    return {
-      admin_name: user?.name,
-      requester_role: user?.role,
-      requester_categories: (user?.categories || []).join(','),
-    };
-  }, [user]);
+  const handleOpenPdf = () => {
+    if (isKakaoInApp()) {
+      alert('카카오 인앱브라우저에서는 파일 다운로드가 제한될 수 있어 PDF를 먼저 열어드립니다. 필요 시 우측 상단 메뉴에서 외부 브라우저로 여세요.');
+    }
+    safetyApi.openInspectionsPdf(buildExportParams());
+  };
 
-  const handleExportAllApproved = async () => {
+  const handleDownloadPdf = async () => {
     try {
-      await safetyApi.exportInspections({
-        admin_name: user.name,
-        start_date: start || '2000-01-01',
-        end_date: end || '2099-12-31',
-        requester_role: user?.role,
-        requester_categories: (user?.categories || []).join(','),
-      });
+      await safetyApi.exportInspections(buildExportParams());
     } catch (err) {
       alert('다운로드 실패');
-    }
-  };
-
-  const handleToggleSelectMode = () => {
-    setSelectedIds(new Set());
-    setSelectMode((prev) => {
-      const next = !prev;
-      // 선택 모드 ON이면 승인완료 탭으로 이동 (승인건만 다운로드 요구사항 반영)
-      if (!prev && next) setTab('SUBMITTED');
-      return next;
-    });
-  };
-
-  const toggleSelect = (record) => {
-    // 승인 완료만 선택 가능
-    if (normalizeStatus(record?.status) !== 'SUBMITTED') {
-      alert('승인 완료 건만 선택 다운로드가 가능합니다.');
-      return;
-    }
-
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(record.id)) next.delete(record.id);
-      else next.add(record.id);
-      return next;
-    });
-  };
-
-  const handleDownloadSelected = async () => {
-    try {
-      const ids = Array.from(selectedIds);
-      if (!ids.length) return;
-
-      await safetyApi.exportSelectedInspectionsPdf(ids, {
-        admin_name: requesterParams.admin_name,
-        requester_role: requesterParams.requester_role,
-        requester_categories: requesterParams.requester_categories,
-      });
-
-      // 다운로드 후 선택 유지할지/해제할지 — 실수 방지 차원에서 해제
-      setSelectedIds(new Set());
-      setSelectMode(false);
-    } catch (err) {
-      alert('선택 다운로드 실패');
     }
   };
 
@@ -132,43 +91,22 @@ const AdminRecordsView = ({ user, records, onBack, onDetail }) => {
 
   const tabButtonClass = (key) => {
     const active = tab === key;
-    const disabled = selectMode && key !== 'SUBMITTED' && key !== 'ALL'; // 선택모드에서는 SUBMITTED만 적극 권장
     return `flex-1 py-2 rounded-xl font-black text-[11px] transition-all active:scale-95 ${
-      disabled ? 'opacity-40' : ''
-    } ${
       active ? 'bg-slate-900 text-white shadow' : 'bg-white text-slate-500 border border-slate-100'
     }`;
   };
 
-  const onTabClick = (key) => {
-    if (selectMode && key !== 'SUBMITTED') {
-      alert('선택 다운로드는 "승인완료" 탭에서만 진행해 주세요.');
-      return;
-    }
-    setTab(key);
-  };
-
-  const selectedCount = selectedIds.size;
-
   return (
     <div className="flex flex-col h-full animate-in slide-in-from-right-8">
-      <div className="flex items-center mb-6">
-        <button onClick={onBack} className="p-2 -ml-2 text-slate-400">
-          <ArrowLeft size={24} />
-        </button>
+      <div className="flex items-center mb-5">
+        <button onClick={onBack} className="p-2 -ml-2 text-slate-400"><ArrowLeft size={24} /></button>
         <h2 className="text-xl font-bold flex-1 text-center pr-8 tracking-tight">점검 기록</h2>
       </div>
 
-      <div className="space-y-4 mb-6">
+      <div className="space-y-3 mb-4">
         <div className="flex gap-2">
           {STATUS_TABS.map((item) => (
-            <button
-              key={item.key}
-              className={tabButtonClass(item.key)}
-              onClick={() => onTabClick(item.key)}
-            >
-              {item.label}
-            </button>
+            <button key={item.key} className={tabButtonClass(item.key)} onClick={() => setTab(item.key)}>{item.label}</button>
           ))}
         </div>
 
@@ -177,93 +115,35 @@ const AdminRecordsView = ({ user, records, onBack, onDetail }) => {
           <input
             type="text"
             placeholder="이름/장소/장비/작업구분 검색"
-            className="w-full pl-11 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold"
+            className="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
 
-        <div className="flex gap-2 items-center bg-slate-50 p-2 rounded-2xl">
-          <input
-            type="date"
-            className="flex-1 p-2 bg-white rounded-xl text-[10px] font-bold"
-            value={start}
-            onChange={(e) => setStart(e.target.value)}
-          />
-          <span className="text-slate-300">~</span>
-          <input
-            type="date"
-            className="flex-1 p-2 bg-white rounded-xl text-[10px] font-bold"
-            value={end}
-            onChange={(e) => setEnd(e.target.value)}
-          />
-          <button
-            onClick={() => {
-              setStart('');
-              setEnd('');
-            }}
-            className="p-2 text-blue-500 active:scale-90"
-            title="기간 초기화"
-          >
-            <RotateCcw size={14} />
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={handleOpenPdf} className="w-full bg-slate-900 text-white py-3.5 rounded-2xl font-bold text-sm shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-all">
+            <FileText size={16} /> PDF 열기
+          </button>
+          <button onClick={handleDownloadPdf} className="w-full bg-white text-slate-700 py-3.5 rounded-2xl font-bold text-sm border border-slate-200 flex items-center justify-center gap-2 active:scale-95 transition-all">
+            <Download size={16} /> PDF 다운로드
           </button>
         </div>
 
-        {/* ✅ 다운로드 영역 */}
-        {!selectMode ? (
-          <>
-            <button
-              onClick={handleExportAllApproved}
-              className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold text-sm shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-all"
-            >
-              <Download size={16} /> PDF 일괄 다운로드
-            </button>
+        <button
+          onClick={() => setShowAdvanced((v) => !v)}
+          className="w-full bg-white text-slate-600 py-3 rounded-2xl font-bold text-sm border border-slate-200 flex items-center justify-center gap-2"
+        >
+          <SlidersHorizontal size={16} /> {showAdvanced ? '고급 필터 닫기' : '고급 필터 열기'}
+        </button>
 
-            <button
-              onClick={handleToggleSelectMode}
-              className="w-full bg-white text-slate-700 py-4 rounded-2xl font-bold text-sm border border-slate-200 shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all"
-            >
-              <CheckSquare size={16} /> 선택 다운로드
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              onClick={handleDownloadSelected}
-              disabled={selectedCount === 0}
-              className={`w-full py-4 rounded-2xl font-bold text-sm shadow-lg flex items-center justify-center gap-2 transition-all ${
-                selectedCount === 0
-                  ? 'bg-slate-200 text-slate-500'
-                  : 'bg-slate-900 text-white active:scale-95'
-              }`}
-              title={selectedCount === 0 ? '다운로드할 항목을 선택하세요' : ''}
-            >
-              <Download size={16} /> 선택한 {selectedCount}건 PDF 다운로드
-            </button>
-
-            <div className="flex gap-2">
-              <button
-                onClick={handleExportAllApproved}
-                className="flex-1 bg-white text-slate-700 py-4 rounded-2xl font-bold text-[12px] border border-slate-200 shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all"
-              >
-                <Download size={14} /> 전체 다운로드
-              </button>
-
-              <button
-                onClick={() => {
-                  setSelectedIds(new Set());
-                  setSelectMode(false);
-                }}
-                className="flex-1 bg-white text-red-600 py-4 rounded-2xl font-bold text-[12px] border border-red-200 shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all"
-              >
-                <X size={14} /> 선택 취소
-              </button>
-            </div>
-
-            <div className="text-[10px] text-slate-400 font-bold px-1">
-              체크박스로 선택하세요. (승인 완료 건만 선택 가능)
-            </div>
-          </>
+        {showAdvanced && (
+          <div className="flex gap-2 items-center bg-slate-50 p-2 rounded-2xl">
+            <input type="date" className="flex-1 p-2 bg-white rounded-xl text-[10px] font-bold" value={start} onChange={(e) => setStart(e.target.value)} />
+            <span className="text-slate-300">~</span>
+            <input type="date" className="flex-1 p-2 bg-white rounded-xl text-[10px] font-bold" value={end} onChange={(e) => setEnd(e.target.value)} />
+            <button onClick={() => { setStart(''); setEnd(''); }} className="p-2 text-blue-500 active:scale-90"><RotateCcw size={14} /></button>
+          </div>
         )}
       </div>
 

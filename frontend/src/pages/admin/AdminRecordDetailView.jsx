@@ -45,40 +45,8 @@ const AdminRecordDetailView = ({ user, record, onBack, onApprove, onReject }) =>
   const normalizedRole = String(user?.role || '').trim().toUpperCase();
   const isSubadmin = normalizedRole === 'SUBADMIN' || normalizedRole === 'SUB_ADMIN';
   const isMasterAdmin = normalizedRole === 'MASTER_ADMIN';
-
-  const statusUpper = normalizeStatus(record?.status);
-  const isPending = statusUpper === 'PENDING';
-  const isApproved = statusUpper === 'SUBMITTED';
-
+  const isPending = String(record?.status || '').toUpperCase() === 'PENDING';
   const canApproveOrReject = isPending && (isSubadmin || isMasterAdmin);
-
-  // ✅ 단건 PDF 다운로드 상태
-  const [downloadingPdf, setDownloadingPdf] = useState(false);
-
-  const handleDownloadSinglePdf = async () => {
-    const inspectionId = record?.id;
-    if (!inspectionId) {
-      alert('점검 ID를 찾을 수 없습니다.');
-      return;
-    }
-    if (!isApproved) {
-      alert('승인 완료 건만 PDF 다운로드가 가능합니다.');
-      return;
-    }
-
-    try {
-      setDownloadingPdf(true);
-      await safetyApi.exportSingleInspectionPdf(inspectionId, {
-        admin_name: user?.name,
-        requester_role: user?.role,
-        requester_categories: (user?.categories || []).join(','),
-      });
-    } catch (e) {
-      alert('PDF 다운로드 실패');
-    } finally {
-      setDownloadingPdf(false);
-    }
-  };
 
   // --- 서명 모달(승인용) ---
   const [openSign, setOpenSign] = useState(false);
@@ -236,7 +204,7 @@ const AdminRecordDetailView = ({ user, record, onBack, onApprove, onReject }) =>
           </div>
         )}
 
-        {/* SUBADMIN + MASTER 승인/반려 */}
+        {/* SUBADMIN 승인/반려 */}
         {canApproveOrReject && (
           <div className="mt-5 flex gap-2">
             <button

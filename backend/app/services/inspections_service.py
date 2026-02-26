@@ -191,7 +191,28 @@ def list_admin_inspections(start_date: str, end_date: str, requester_role: Optio
     data.sort(key=lambda r: (r.get("date") or "", r.get("updatedAt") or ""), reverse=True)
     out: List[Dict[str, Any]] = []
     for r in data:
-        out.append(_to_admin_view(r))
+        latest = r.get("latestRevision") or {}
+        out.append(
+            {
+                "id": r.get("id"),
+                "name": r.get("name"),
+                "userName": r.get("userName"),
+                "date": r.get("date"),
+                "hospital": r.get("hospital"),
+                "equipmentName": r.get("equipmentName"),
+                "workType": r.get("workType"),
+                "status": r.get("status"),
+                "resultCount": latest.get("resultCount"),
+                "improveCount": latest.get("improveCount"),
+                "rejectReason": r.get("rejectReason") or "",
+                "results": latest.get("answers") or [],
+                "signatureBase64": latest.get("signatureBase64"),
+                "subadminName": r.get("approvedBy"),
+                "subadminSignatureBase64": r.get("subadminSignatureBase64"),
+                "createdAt": r.get("createdAt"),
+                "updatedAt": r.get("updatedAt"),
+            }
+        )
     return out
 
 

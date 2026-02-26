@@ -23,6 +23,22 @@ const api = axios.create({
 
 const downloadNameCounter = new Map();
 
+
+function buildQuery(params = {}) {
+  const q = new URLSearchParams();
+  Object.entries(params || {}).forEach(([k, v]) => {
+    if (v === undefined || v === null || v === '') return;
+    q.append(k, String(v));
+  });
+  return q.toString();
+}
+
+function buildAbsoluteApiUrl(pathWithQuery) {
+  const base = String(API_BASE_URL || '').replace(/\/$/, '');
+  const path = String(pathWithQuery || '').replace(/^\//, '');
+  return `${base}/${path}`;
+}
+
 function makeIncrementedFileName(fileName) {
   const safeName = fileName || 'safety_report.pdf';
   const dot = safeName.lastIndexOf('.');
@@ -121,6 +137,20 @@ export const safetyApi = {
     }
   },
 
+  // 점검 업무(카테고리) 목록 조회
+  getWorkTypes: async () => {
+    try {
+      const response = await api.get('/settings/work-types');
+      return response.data;
+    } catch (error) {
+      console.error('점검 업무 목록 로딩 실패:', error);
+      return {
+        workTypes: ['X-ray 설치작업', 'MR 설치작업', 'CT 작업', '정기 유지보수']
+      };
+    }
+  },
+
+  // 카테고리별 체크리스트 조회
   getChecklist: async (workType) => {
     try {
       const response = await api.get(`/checklists/${encodeURIComponent(workType)}`);
@@ -225,7 +255,7 @@ export const safetyApi = {
     }
   },
 
-  // ✅ (기존) 점검 기록 PDF 일괄 다운로드(기간)
+  // 점검 기록 PDF 다운로드
   exportInspections: async (params) => {
     try {
       const response = await api.get('/inspections/export-pdf', {
@@ -258,10 +288,9 @@ export const safetyApi = {
       });
 
       const disposition = response.headers?.['content-disposition'] || '';
-      const serverFileName = extractFileNameFromDisposition(
-        disposition,
-        `inspection_${inspectionId}_${new Date().getTime()}.pdf`
-      );
+      const match = disposition.match(/filename="?([^";]+)"?/i);
+      const serverFileName = match?.[1] || `safety_report_${new Date().getTime()}.pdf`;
+      link.setAttribute('download', makeIncrementedFileName(serverFileName));
 
       triggerBlobDownload(new Blob([response.data], { type: 'application/pdf' }), serverFileName);
     } catch (error) {
@@ -300,11 +329,20 @@ export const safetyApi = {
 
       triggerBlobDownload(new Blob([response.data], { type: 'application/pdf' }), serverFileName);
     } catch (error) {
-      console.error('선택 PDF 다운로드 실패:', error);
+      console.error('PDF 다운로드 실패:', error);
       throw error;
     }
   },
 
+
+
+  openInspectionsPdf: (params) => {
+    const query = buildQuery({ ...(params || {}), mode: 'inline' });
+    const url = buildAbsoluteApiUrl(`/inspections/export-pdf?${query}`);
+    window.open(url, '_blank');
+  },
+
+  // (SUBADMIN) 승인/반려
   approveInspection: async (id, payload) => {
     const response = await api.post(`/inspections/${id}/approve`, payload || {});
     return response.data;
@@ -344,7 +382,7 @@ export const safetyApi = {
       console.error('점검 업무 목록 업데이트 실패:', error);
       throw error;
     }
-  },
+  }
 };
 
 export default api;
